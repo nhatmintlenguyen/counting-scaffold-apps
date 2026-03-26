@@ -1,0 +1,34 @@
+# ─── Built output ────────────────────────────────────────────────────────────
+*.iml
+.gradle
+/local.properties
+/build
+*/build/
+/captures
+
+# ─── Android Studio IDE files ────────────────────────────────────────────────
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+
+# ─── Native build ────────────────────────────────────────────────────────────
+.externalNativeBuild
+.cxx
+
+# ─── Signing secrets (never commit) ──────────────────────────────────────────
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# ─── Release artefacts ───────────────────────────────────────────────────────
+*.apk
+*.aab
+*.ap_
+
+# ─── OS noise ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
