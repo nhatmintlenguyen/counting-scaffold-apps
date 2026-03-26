@@ -75,6 +75,12 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.ktx)
     implementation(libs.lifecycle.viewmodel.compose)
 
+    // Navigation
+    implementation(libs.navigation.compose)
+
+    // Material Icons Extended (GridView, CameraAlt, etc.)
+    implementation(libs.compose.material.icons.extended)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
