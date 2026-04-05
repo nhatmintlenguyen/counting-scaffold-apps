@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Used by FileProvider to share camera capture URIs with the camera app -->
+    <cache-path name="camera_images" path="camera/" />
+</paths>

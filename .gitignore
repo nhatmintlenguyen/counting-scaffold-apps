@@ -13,6 +13,10 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+# Machine-specific IDE state (not useful for teammates)
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/migrations.xml
 
 # ─── Native build ────────────────────────────────────────────────────────────
 .externalNativeBuild
@@ -28,6 +32,12 @@ keystore.properties
 *.apk
 *.aab
 *.ap_
+
+# ─── Kotlin IDE session data ──────────────────────────────────────────────────
+.kotlin/
+
+# ─── Mock / design assets (not part of the app) ───────────────────────────────
+**/UI-design/
 
 # ─── OS noise ─────────────────────────────────────────────────────────────────
 .DS_Store
