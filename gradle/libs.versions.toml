@@ -34,6 +34,9 @@ room = "2.6.1"
 # KSP
 ksp = "2.0.21-1.0.28"
 
+# Security (EncryptedSharedPreferences)
+security-crypto = "1.1.0-alpha06"
+
 [libraries]
 # Core
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -79,6 +82,9 @@ navigation-compose = { group = "androidx.navigation", name = "navigation-compose
 
 # Material Icons Extended (GridView, CameraAlt, etc.)
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+
+# Security
+security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
 
 # Room
 room-runtime  = { group = "androidx.room", name = "room-runtime",  version.ref = "room" }

@@ -82,6 +82,9 @@ dependencies {
     // Material Icons Extended (GridView, CameraAlt, etc.)
     implementation(libs.compose.material.icons.extended)
 
+    // Security (EncryptedSharedPreferences)
+    implementation(libs.security.crypto)
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
