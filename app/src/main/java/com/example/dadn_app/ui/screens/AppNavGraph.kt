@@ -33,8 +33,6 @@ object AppRoutes {
 @Composable
 fun AppNavGraph(startDestination: String) {
     val navController = rememberNavController()
-
-    // Shared AuthViewModel scoped to the NavGraph lifetime
     val authVm: AuthViewModel = viewModel()
 
     NavHost(
@@ -48,7 +46,6 @@ fun AppNavGraph(startDestination: String) {
                     navController.navigate(AppRoutes.REGISTER)
                 },
                 onLoginSuccess = { email ->
-                    // Cất email vào két sắt để dùng lâu dài
                     TokenManager.saveTokens(
                         accessToken = TokenManager.accessToken ?: "",
                         refreshToken = TokenManager.refreshToken ?: "",
@@ -66,7 +63,6 @@ fun AppNavGraph(startDestination: String) {
                 vm                = authVm,
                 onNavigateToLogin = { navController.popBackStack() },
                 onRegisterSuccess = { email ->
-                    // Cất email vào két sắt
                     TokenManager.saveTokens(
                         accessToken = TokenManager.accessToken ?: "",
                         refreshToken = TokenManager.refreshToken ?: "",
@@ -89,7 +85,6 @@ fun AppNavGraph(startDestination: String) {
                 }
             )
         ) { backStackEntry ->
-            // Ưu tiên lấy email từ két sắt trước, nếu không có mới lấy từ tham số truyền vào
             val email = TokenManager.userEmail ?: backStackEntry.arguments?.getString("email") ?: "user@example.com"
             val scans = remember { mutableStateListOf<ScanRecord>() }
             
@@ -106,7 +101,7 @@ fun AppNavGraph(startDestination: String) {
                     }
                 },
                 onLogout = {
-                    TokenManager.clearTokens() // Xóa sạch dữ liệu khi đăng xuất
+                    TokenManager.clearTokens()
                     navController.navigate(AppRoutes.LOGIN) {
                         popUpTo(0) { inclusive = true }
                     }

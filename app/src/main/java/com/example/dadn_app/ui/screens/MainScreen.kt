@@ -1,5 +1,4 @@
 package com.example.dadn_app.ui.screens
-
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -36,14 +35,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
+import com.example.dadn_app.data.local.database.AppDatabase
+import com.example.dadn_app.data.local.entities.ScanEntity
 import com.example.dadn_app.ui.theme.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -91,7 +96,6 @@ fun triggerHapticFeedback(context: Context) {
     try {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
-            // Dùng reflection hoặc cast an toàn để tránh lỗi compile nếu SDK mismatch
             val method = vibratorManager.javaClass.getMethod("getDefaultVibrator")
             val vibrator = method.invoke(vibratorManager) as android.os.Vibrator
             vibrator.vibrate(android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
@@ -106,7 +110,6 @@ fun triggerHapticFeedback(context: Context) {
             }
         }
     } catch (_: Exception) {
-        // Fallback nếu có lỗi xảy ra
     }
 }
 
@@ -115,13 +118,28 @@ fun createCaptureUri(context: Context): Uri {
         createNewFile()
         deleteOnExit()
     }
-    // Sửa lại cho khớp với Manifest: .fileprovider (thay vì .provider)
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
 }
 
 fun uriToFileType(context: Context, uri: Uri): String {
     val extension = context.contentResolver.getType(uri)?.split("/")?.lastOrNull() ?: "JPG"
     return extension.uppercase()
+}
+
+fun saveAvatarToInternal(context: Context, uri: Uri): Uri? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val file = File(context.filesDir, "user_avatar_permanent.jpg")
+        val outputStream = FileOutputStream(file)
+        inputStream?.use { input ->
+            outputStream.use { output ->
+                input.copyTo(output)
+            }
+        }
+        Uri.fromFile(file)
+    } catch (_: Exception) {
+        null
+    }
 }
 
 // ─── Top App Bar ──────────────────────────────────────────────────────────────
@@ -215,22 +233,53 @@ fun MainScreen(
     onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    
-    // Scan Preferences State (Lifting up to make them functional)
+    val scope = rememberCoroutineScope()
+    val db = remember { AppDatabase.getDatabase(context) }
+
     var smartFocus by remember { mutableStateOf(true) }
     var offlineCache by remember { mutableStateOf(true) }
     var hapticFeedback by remember { mutableStateOf(false) }
 
-    // Simulated API Logic: Xử lý các ảnh đang ở trạng thái Pending
+    LaunchedEffect(Unit) {
+        db.scanDao().getAllScans().collectLatest { entities ->
+            if (scans.isEmpty() && entities.isNotEmpty()) {
+                entities.forEach { entity ->
+                    onAddScan(ScanRecord(
+                        id = entity.id,
+                        name = entity.name,
+                        datetime = entity.datetime,
+                        count = entity.count,
+                        fileType = entity.fileType,
+                        status = entity.status,
+                        imageUri = entity.imageUri
+                    ))
+                }
+            }
+        }
+    }
+
     LaunchedEffect(scans.count { it.status == "Pending" }) {
         scans.filter { it.status == "Pending" }.forEach { pending ->
-            // Smart Focus: Nếu bật thì AI xử lý ảnh sắc nét nhanh hơn
             val processingTime = if (smartFocus) 1200L else 2500L
             kotlinx.coroutines.delay(processingTime)
             
-            onUpdateScan(pending.copy(status = "Success", count = (12..45).random()))
-            
-            // Haptic Confirmation: Rung máy khi quét thành công
+            val updated = pending.copy(status = "Success", count = (12..45).random())
+            onUpdateScan(updated)
+
+            if (offlineCache) {
+                scope.launch {
+                    db.scanDao().insertScan(ScanEntity(
+                        id = updated.id,
+                        name = updated.name,
+                        datetime = updated.datetime,
+                        count = updated.count,
+                        fileType = updated.fileType,
+                        status = updated.status,
+                        imageUri = updated.imageUri
+                    ))
+                }
+            }
+
             if (hapticFeedback) {
                 triggerHapticFeedback(context)
             }
@@ -277,7 +326,8 @@ fun InventoryScreen(scans: List<ScanRecord>) {
         modifier = Modifier
             .fillMaxSize()
             .background(Background)
-            .padding(16.dp)
+            .padding(horizontal = 16.dp)
+            .padding(top = 16.dp)
     ) {
         Text("Scan History", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF102A43))
         Spacer(Modifier.height(16.dp))
@@ -286,7 +336,10 @@ fun InventoryScreen(scans: List<ScanRecord>) {
                 Text("No scans yet", color = Color(0xFF627D98))
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 32.dp)
+            ) {
                 items(scans) { scan ->
                     RecentScanCard(scan)
                 }
@@ -327,8 +380,7 @@ fun RecentScanCard(scan: ScanRecord) {
 fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRecord) -> Unit = {}) {
     val context = LocalContext.current
     var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
-    
-    // Lấy thông tin lần cuối cùng quét (Vì onAddScan thêm vào đầu list nên dùng firstOrNull)
+
     val lastScan = scans.firstOrNull()
     val isProcessing = lastScan?.status == "Pending"
     val lastActivityTitle = if (lastScan != null) "${lastScan.datetime} • ${lastScan.name}" else "No recent activity"
@@ -336,7 +388,7 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) pendingCaptureUri?.let { onAddScan(ScanRecord(name="Camera Scan", datetime=nowFormatted(), fileType="JPG", status="Pending", imageUri=it.toString())) }
     }
-    // Dùng GetMultipleContents để quay lại giao diện chọn file truyền thống
+
     val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) {
             val selectedUris = if (uris.size > 10) uris.take(10) else uris
@@ -363,7 +415,7 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // --- 1. Illustration Area ---
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -385,14 +437,12 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         if (isProcessing && lastScan.imageUri.isNotEmpty()) {
-                            // Hiển thị ảnh đang xử lý nếu có URI
                             AsyncImage(
                                 model = lastScan.imageUri,
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(32.dp)),
                                 contentScale = ContentScale.Crop
                             )
-                            // Lớp phủ mờ khi đang quét
                             Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(40.dp))
                         } else {
@@ -414,6 +464,7 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
                         }
                     }
                 }
+
                 Surface(
                     modifier = Modifier.offset(y = 15.dp),
                     shape = RoundedCornerShape(10.dp),
@@ -465,7 +516,6 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
                                    android.os.Build.MODEL.contains("Emulator")
                     
                     if (isEmulator) {
-                        // MÁY ẢO: Tự động thêm một record giả để test
                         onAddScan(ScanRecord(
                             name = "Emulator Scan",
                             datetime = nowFormatted(),
@@ -476,7 +526,6 @@ fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRec
                         ))
                         Toast.makeText(context, "Emulator detected: Adding mock result", Toast.LENGTH_SHORT).show()
                     } else {
-                        // MÁY THẬT: Mở camera như bình thường
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                             pendingCaptureUri = createCaptureUri(context); cameraLauncher.launch(pendingCaptureUri!!)
                         } else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -555,19 +604,36 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val showSoon = { Toast.makeText(context, "Feature coming soon in Pro version", Toast.LENGTH_SHORT).show() }
-    var avatarUri by remember { mutableStateOf<Uri?>(null) }
+
+    var avatarUri by remember { 
+        mutableStateOf(com.example.dadn_app.core.utils.TokenManager.userAvatar?.toUri())
+    }
     
     val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) avatarUri = uri
+        if (uri != null) {
+            val savedUri = saveAvatarToInternal(context, uri)
+            if (savedUri != null) {
+                avatarUri = savedUri
+                com.example.dadn_app.core.utils.TokenManager.saveAvatar(savedUri.toString())
+            }
+        }
     }
 
-    // Lấy email và tên thật từ TokenManager
     val finalEmail = remember(email) {
         com.example.dadn_app.core.utils.TokenManager.userEmail ?: email ?: "user@example.com"
     }
     
     val finalName = remember {
-        com.example.dadn_app.core.utils.TokenManager.userName ?: finalEmail.split("@").first()
+        val nameFromToken = com.example.dadn_app.core.utils.TokenManager.userName
+        if (!nameFromToken.isNullOrEmpty() && nameFromToken != "Test Engineer") {
+            nameFromToken
+        } else {
+            finalEmail.split("@").first()
+        }
+    }
+
+    val lastSyncTime = remember {
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
     }
 
     Column(
@@ -666,7 +732,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     SystemInfoRow("CORE ENGINE", "v2.4.12-pro")
-                    SystemInfoRow("LAST SYNC", "2023-11-24 09:42 UTC")
+                    SystemInfoRow("LAST SYNC", lastSyncTime)
                     SystemInfoRow("NETWORK PROTOCOL", "TLS 1.3 Secure", hasDot = true)
                 }
             }
@@ -744,8 +810,16 @@ fun SecurityScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(32.dp))
         Button(
             onClick = { 
-                Toast.makeText(context, "Password updated successfully", Toast.LENGTH_SHORT).show()
-                onBack()
+                if (oldPass.isEmpty() || newPass.isEmpty() || confirmPass.isEmpty()) {
+                    Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                } else if (newPass != confirmPass) {
+                    Toast.makeText(context, "New passwords do not match", Toast.LENGTH_SHORT).show()
+                } else if (newPass.length < 6) {
+                    Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Password updated successfully!", Toast.LENGTH_SHORT).show()
+                    onBack()
+                }
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(12.dp),

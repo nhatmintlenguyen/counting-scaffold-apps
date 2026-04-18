@@ -2,6 +2,7 @@ package com.example.dadn_app.core.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 
@@ -25,12 +26,11 @@ object TokenManager {
     private const val KEY_REFRESH = "refresh_token"
     private const val KEY_EMAIL   = "user_email"
     private const val KEY_NAME    = "user_name"
+    private const val KEY_AVATAR  = "user_avatar"
 
     private lateinit var prefs: SharedPreferences
 
     fun init(context: Context) {
-        // MasterKeys.getOrCreate() generates (or retrieves) the AES-256-GCM key
-        // stored inside the Android Keystore — it never leaves the secure hardware.
         val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
 
         prefs = EncryptedSharedPreferences.create(
@@ -44,14 +44,12 @@ object TokenManager {
 
     /** Save tokens, email, and name after a successful login or register. */
     fun saveTokens(accessToken: String, refreshToken: String, email: String? = null, name: String? = null) {
-        val editor = prefs.edit()
-            .putString(KEY_ACCESS,  accessToken)
-            .putString(KEY_REFRESH, refreshToken)
-        
-        if (email != null) editor.putString(KEY_EMAIL, email)
-        if (name != null) editor.putString(KEY_NAME, name)
-        
-        editor.apply()
+        prefs.edit {
+            putString(KEY_ACCESS, accessToken)
+            putString(KEY_REFRESH, refreshToken)
+            if (email != null) putString(KEY_EMAIL, email)
+            if (name != null) putString(KEY_NAME, name)
+        }
     }
 
     /** Returns null if no token has been stored yet (user not logged in). */
@@ -64,6 +62,9 @@ object TokenManager {
     val userName: String?
         get() = prefs.getString(KEY_NAME, null)
 
+    val userAvatar: String?
+        get() = prefs.getString(KEY_AVATAR, null)
+
     val refreshToken: String?
         get() = prefs.getString(KEY_REFRESH, null)
 
@@ -71,8 +72,17 @@ object TokenManager {
     val isLoggedIn: Boolean
         get() = accessToken != null
 
-    /** Call on logout to erase all stored credentials. */
+    /** Call on logout to erase only security credentials, keeping profile info. */
     fun clearTokens() {
-        prefs.edit().clear().apply()
+        prefs.edit {
+            remove(KEY_ACCESS)
+            remove(KEY_REFRESH)
+            // Keep KEY_EMAIL, KEY_NAME, KEY_AVATAR for a personalized experience
+        }
+    }
+
+    /** Save only the avatar URI string. */
+    fun saveAvatar(uri: String) {
+        prefs.edit { putString(KEY_AVATAR, uri) }
     }
 }
