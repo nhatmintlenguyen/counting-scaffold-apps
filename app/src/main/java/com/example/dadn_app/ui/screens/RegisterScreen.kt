@@ -256,7 +256,7 @@ fun RegisterFormCard(
 @Composable
 fun RegisterScreen(
     onNavigateToLogin: () -> Unit,
-    onRegisterSuccess: () -> Unit,
+    onRegisterSuccess: (String) -> Unit,
     vm: AuthViewModel = viewModel(),
 ) {
     val uiState by vm.uiState.collectAsState()
@@ -277,7 +277,7 @@ fun RegisterScreen(
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(uiState.isSuccess) {
-        if (uiState.isSuccess) onRegisterSuccess()
+        if (uiState.isSuccess) onRegisterSuccess(email)
     }
 
     LaunchedEffect(uiState.errorMessage) {

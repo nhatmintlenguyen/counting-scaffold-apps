@@ -220,7 +220,7 @@ fun LoginFormCard(
 @Composable
 fun LoginScreen(
     onNavigateToRegister: () -> Unit,
-    onLoginSuccess: () -> Unit,
+    onLoginSuccess: (String) -> Unit,
     vm: AuthViewModel = viewModel(),
 ) {
     val uiState by vm.uiState.collectAsState()
@@ -235,7 +235,7 @@ fun LoginScreen(
     var passwordError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(uiState.isSuccess) {
-        if (uiState.isSuccess) onLoginSuccess()
+        if (uiState.isSuccess) onLoginSuccess(email)
     }
 
     LaunchedEffect(uiState.errorMessage) {

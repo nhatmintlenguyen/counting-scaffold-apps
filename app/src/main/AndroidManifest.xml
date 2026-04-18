@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
+    <!-- Vibrate for haptic feedback -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!--
         Storage permissions for API 24–28.
         On API 29+ (scoped storage) these are not needed for app-private dirs,

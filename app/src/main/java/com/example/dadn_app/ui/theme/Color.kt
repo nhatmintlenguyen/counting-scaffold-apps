@@ -73,3 +73,9 @@ val NavyMuted            = Color(0xFF717786)
 // ─── Top/Bottom bar ───────────────────────────────────────────────────────────
 val TopBarBg             = Color(0xFFF8FAFC)  // slate-50
 val BottomBarBg          = Color(0xCCFFFFFF)  // white/80
+
+// ─── Design System Colors ─────────────────────────────────────────────────────
+val DesignPrimary        = Color(0xFF007A8A)
+val DesignSecondary      = Color(0xFF00D1FF)
+val DesignTextDark       = Color(0xFF111C2D)
+val DesignTextLight      = Color(0xFF717786)

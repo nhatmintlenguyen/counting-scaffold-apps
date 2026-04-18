@@ -48,7 +48,7 @@ class AuthRepository {
             val response = api.login(LoginRequest(email, password))
             if (response.isSuccessful) {
                 val body = response.body()!!
-                TokenManager.saveTokens(body.accessToken, body.refreshToken)
+                TokenManager.saveTokens(body.accessToken, body.refreshToken, body.user?.email ?: email, body.user?.fullName)
                 AuthResult.Success(body)
             } else {
                 AuthResult.Error(parseErrorMessage(response.errorBody()?.string()))
@@ -67,7 +67,7 @@ class AuthRepository {
             val response = api.register(RegisterRequest(fullName, email, password))
             if (response.isSuccessful) {
                 val body = response.body()!!
-                TokenManager.saveTokens(body.accessToken, body.refreshToken)
+                TokenManager.saveTokens(body.accessToken, body.refreshToken, body.user?.email ?: email, body.user?.fullName)
                 AuthResult.Success(body)
             } else {
                 AuthResult.Error(parseErrorMessage(response.errorBody()?.string()))
@@ -82,26 +82,18 @@ class AuthRepository {
     private suspend fun mockLogin(email: String, password: String): AuthResult {
         delay(1_000)   // simulate network latency
 
-        return if (email == MOCK_EMAIL && password == MOCK_PASSWORD) {
-            val fakeResponse = buildFakeAuthResponse(email, "Test Engineer")
-            TokenManager.saveTokens(fakeResponse.accessToken, fakeResponse.refreshToken)
-            AuthResult.Success(fakeResponse)
-        } else {
-            AuthResult.Error("Invalid credentials. Use $MOCK_EMAIL / $MOCK_PASSWORD")
-        }
+        // Chấp nhận mọi email ở chế độ Mock để anh test cho sướng!
+        val fakeResponse = buildFakeAuthResponse(email, "Test Engineer")
+        TokenManager.saveTokens(fakeResponse.accessToken, fakeResponse.refreshToken, email, "Test Engineer")
+        return AuthResult.Success(fakeResponse)
     }
 
     private suspend fun mockRegister(fullName: String, email: String, password: String): AuthResult {
         delay(1_200)   // simulate network latency
 
-        // Simulate "email already in use" for the reserved mock address
-        return if (email == MOCK_EMAIL) {
-            AuthResult.Error("Email already in use. Try a different address.")
-        } else {
-            val fakeResponse = buildFakeAuthResponse(email, fullName)
-            TokenManager.saveTokens(fakeResponse.accessToken, fakeResponse.refreshToken)
-            AuthResult.Success(fakeResponse)
-        }
+        val fakeResponse = buildFakeAuthResponse(email, fullName)
+        TokenManager.saveTokens(fakeResponse.accessToken, fakeResponse.refreshToken, email, fullName)
+        return AuthResult.Success(fakeResponse)
     }
 
     private fun buildFakeAuthResponse(email: String, fullName: String) = AuthResponse(

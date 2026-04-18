@@ -23,6 +23,8 @@ object TokenManager {
     private const val PREFS_FILE  = "scp_secure_prefs"
     private const val KEY_ACCESS  = "access_token"
     private const val KEY_REFRESH = "refresh_token"
+    private const val KEY_EMAIL   = "user_email"
+    private const val KEY_NAME    = "user_name"
 
     private lateinit var prefs: SharedPreferences
 
@@ -40,17 +42,27 @@ object TokenManager {
         )
     }
 
-    /** Save both tokens after a successful login or register. */
-    fun saveTokens(accessToken: String, refreshToken: String) {
-        prefs.edit()
+    /** Save tokens, email, and name after a successful login or register. */
+    fun saveTokens(accessToken: String, refreshToken: String, email: String? = null, name: String? = null) {
+        val editor = prefs.edit()
             .putString(KEY_ACCESS,  accessToken)
             .putString(KEY_REFRESH, refreshToken)
-            .apply()
+        
+        if (email != null) editor.putString(KEY_EMAIL, email)
+        if (name != null) editor.putString(KEY_NAME, name)
+        
+        editor.apply()
     }
 
     /** Returns null if no token has been stored yet (user not logged in). */
     val accessToken: String?
         get() = prefs.getString(KEY_ACCESS, null)
+
+    val userEmail: String?
+        get() = prefs.getString(KEY_EMAIL, null)
+
+    val userName: String?
+        get() = prefs.getString(KEY_NAME, null)
 
     val refreshToken: String?
         get() = prefs.getString(KEY_REFRESH, null)

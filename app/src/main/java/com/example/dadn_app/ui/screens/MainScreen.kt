@@ -4,95 +4,124 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.webkit.MimeTypeMap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.dadn_app.data.local.ScanRecord
+import coil.compose.AsyncImage
 import com.example.dadn_app.ui.theme.*
-import com.example.dadn_app.ui.viewmodel.HomeViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-// ─── Route constants ──────────────────────────────────────────────────────────
+// ─── Data Models ──────────────────────────────────────────────────────────────
+
+data class ScanRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val datetime: String,
+    val count: Int = 0,
+    val fileType: String,
+    val status: String, // "Pending", "Success", "Failed"
+    val imageUri: String = ""
+)
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
 
 object Routes {
-    const val INVENTORY    = "inventory"
+    const val INVENTORY = "inventory"
     const val CURRENT_SCAN = "current_scan"
-    const val SETTINGS     = "settings"
+    const val SETTINGS = "settings"
+    const val SECURITY = "security"
+    const val MFA = "mfa"
+    const val DEVICES = "devices"
 }
 
-// ─── Nav item model ───────────────────────────────────────────────────────────
-
-private data class BottomNavItem(
+class BottomNavItem(
     val route: String,
     val label: String,
     val icon: ImageVector,
-    val iconSelected: ImageVector = icon,
+    val iconSelected: ImageVector
 )
 
-private val bottomNavItems = listOf(
-    BottomNavItem(Routes.INVENTORY,    "Inventory",    Icons.Outlined.Inventory2,      Icons.Filled.Inventory2),
-    BottomNavItem(Routes.CURRENT_SCAN, "Current Scan", Icons.Outlined.DocumentScanner, Icons.Filled.DocumentScanner),
-    BottomNavItem(Routes.SETTINGS,     "Settings",     Icons.Outlined.Settings,        Icons.Filled.Settings),
+val bottomNavItems = listOf(
+    BottomNavItem(Routes.INVENTORY, "Inventory", Icons.Filled.Inventory, Icons.Filled.Inventory),
+    BottomNavItem(Routes.CURRENT_SCAN, "Current Scan", Icons.Filled.QrCodeScanner, Icons.Filled.QrCodeScanner),
+    BottomNavItem(Routes.SETTINGS, "Settings", Icons.Filled.Settings, Icons.Filled.Settings)
 )
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helper Functions ─────────────────────────────────────────────────────────
 
-private fun nowFormatted(): String =
-    SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()).format(Date())
+fun nowFormatted(): String = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date())
 
-/**
- * Creates an empty image file in the app's cache and returns a FileProvider URI
- * that can be passed to ACTION_IMAGE_CAPTURE.
- */
-private fun createCaptureUri(context: Context): Uri {
-    val dir = File(context.cacheDir, "camera").also { it.mkdirs() }
-    val file = File.createTempFile("capture_", ".jpg", dir)
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+fun triggerHapticFeedback(context: Context) {
+    try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
+            // Dùng reflection hoặc cast an toàn để tránh lỗi compile nếu SDK mismatch
+            val method = vibratorManager.javaClass.getMethod("getDefaultVibrator")
+            val vibrator = method.invoke(vibratorManager) as android.os.Vibrator
+            vibrator.vibrate(android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(150)
+            }
+        }
+    } catch (_: Exception) {
+        // Fallback nếu có lỗi xảy ra
+    }
 }
 
-/** Extracts a human-readable file extension from a content:// URI. */
-private fun uriToFileType(context: Context, uri: Uri): String {
-    val mime = context.contentResolver.getType(uri) ?: return ""
-    return MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.uppercase() ?: ""
+fun createCaptureUri(context: Context): Uri {
+    val tempFile = File.createTempFile("scaffold_scan_", ".jpg", context.cacheDir).apply {
+        createNewFile()
+        deleteOnExit()
+    }
+    // Sửa lại cho khớp với Manifest: .fileprovider (thay vì .provider)
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
+}
+
+fun uriToFileType(context: Context, uri: Uri): String {
+    val extension = context.contentResolver.getType(uri)?.split("/")?.lastOrNull() ?: "JPG"
+    return extension.uppercase()
 }
 
 // ─── Top App Bar ──────────────────────────────────────────────────────────────
@@ -101,801 +130,796 @@ private fun uriToFileType(context: Context, uri: Uri): String {
 @Composable
 fun ScaffoldCounterTopBar() {
     TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarBg),
-        navigationIcon = {
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
+        title = {
             Row(
-                modifier = Modifier
-                    .padding(start = 20.dp)
-                    .fillMaxHeight(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Architecture,
+                    imageVector = Icons.Filled.PrecisionManufacturing,
                     contentDescription = "Logo",
-                    tint = Primary,
-                    modifier = Modifier.size(26.dp)
+                    tint = Color(0xFF007A8A),
+                    modifier = Modifier.size(32.dp)
                 )
                 Text(
-                    text = "S.C.P",
-                    color = OnBackground,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = (-0.5).sp,
+                    text = "SCAFFOLD COUNTER PRO",
+                    color = Color(0xFF102A43),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.5.sp
                 )
             }
-        },
-        title = {},
-        actions = {
-            IconButton(
-                onClick = {},
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.AccountCircle,
-                    contentDescription = "Account",
-                    tint = OnSurfaceVariant,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-        },
-        modifier = Modifier.shadow(2.dp)
+        }
     )
 }
 
-// ─── Bottom Navigation Bar ────────────────────────────────────────────────────
+// ─── Bottom Navigation ────────────────────────────────────────────────────────
 
 @Composable
 fun ScaffoldCounterBottomNav(navController: NavHostController) {
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
 
     NavigationBar(
-        containerColor = BottomBarBg,
-        tonalElevation = 0.dp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .border(
-                width = 0.5.dp,
-                color = OutlineVariant.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-            )
+        containerColor = Color.White,
+        tonalElevation = 8.dp
     ) {
         bottomNavItems.forEach { item ->
             val selected = currentRoute == item.route
             NavigationBarItem(
                 selected = selected,
                 onClick = {
-                    if (!selected) {
+                    if (currentRoute != item.route) {
                         navController.navigate(item.route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            popUpTo(navController.graph.startDestinationId)
                             launchSingleTop = true
-                            restoreState    = true
                         }
                     }
                 },
                 icon = {
                     Icon(
-                        imageVector = if (selected) item.iconSelected else item.icon,
+                        if (selected) item.iconSelected else item.icon,
                         contentDescription = item.label,
+                        modifier = Modifier.size(24.dp)
                     )
                 },
                 label = {
                     Text(
                         text = item.label.uppercase(),
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 0.8.sp,
-                        maxLines = 1,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor   = Primary,
-                    selectedTextColor   = Primary,
-                    unselectedIconColor = NavyMuted,
-                    unselectedTextColor = NavyMuted,
-                    indicatorColor      = Primary.copy(alpha = 0.08f),
-                ),
+                    selectedIconColor = Color(0xFF007A8A),
+                    selectedTextColor = Color(0xFF007A8A),
+                    unselectedIconColor = Color(0xFF94A3B8),
+                    unselectedTextColor = Color(0xFF94A3B8),
+                    indicatorColor = Color(0xFF007A8A).copy(alpha = 0.1f)
+                )
             )
         }
-    }
-}
-
-// ─── Navigation Graph ─────────────────────────────────────────────────────────
-
-@Composable
-fun ScaffoldCounterNavGraph(
-    navController: NavHostController,
-    modifier: Modifier = Modifier,
-) {
-    NavHost(
-        navController    = navController,
-        startDestination = Routes.INVENTORY,
-        modifier         = modifier,
-    ) {
-        composable(Routes.INVENTORY)    { HomeScreen(navController) }
-        composable(Routes.CURRENT_SCAN) { CurrentScanScreen() }
-        composable(Routes.SETTINGS)     { SettingsScreen() }
     }
 }
 
 // ─── Main Screen (entry point) ────────────────────────────────────────────────
 
 @Composable
-fun MainScreen() {
-    val navController = rememberNavController()
-
-    Scaffold(
-        topBar    = { ScaffoldCounterTopBar() },
-        bottomBar = { ScaffoldCounterBottomNav(navController) },
-        containerColor = Background,
-    ) { innerPadding ->
-        ScaffoldCounterNavGraph(
-            navController = navController,
-            modifier      = Modifier.padding(innerPadding),
-        )
-    }
-}
-
-// ─── Home Screen ──────────────────────────────────────────────────────────────
-
-@Composable
-fun HomeScreen(
-    navController: NavHostController,
-    vm: HomeViewModel = viewModel(),
+fun MainScreen(
+    scans: List<ScanRecord>,
+    email: String = "user@example.com",
+    onAddScan: (ScanRecord) -> Unit = {},
+    onUpdateScan: (ScanRecord) -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val scans by vm.scans.collectAsState()
+    
+    // Scan Preferences State (Lifting up to make them functional)
+    var smartFocus by remember { mutableStateOf(true) }
+    var offlineCache by remember { mutableStateOf(true) }
+    var hapticFeedback by remember { mutableStateOf(false) }
 
-    // ── State ────────────────────────────────────────────────────────────────
-    // URI written just before launching the camera so the capture result callback can read it
-    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
-    // Controls the rationale/denied dialog
-    var showCameraPermissionDialog by remember { mutableStateOf(false) }
-    // Controls the upload-source bottom sheet
-    var showUploadSheet by remember { mutableStateOf(false) }
-
-    // ── Activity result launchers ─────────────────────────────────────────────
-
-    // 1. System camera — TakePicture writes the photo to pendingCaptureUri
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success) {
-            val uri = pendingCaptureUri ?: return@rememberLauncherForActivityResult
-            vm.addScan(
-                ScanRecord(
-                    name      = "Field Capture",
-                    datetime  = nowFormatted(),
-                    fileType  = "JPG",
-                    status    = "Pending",
-                    imageUri  = uri.toString(),
-                )
-            )
-            navController.navigate(Routes.CURRENT_SCAN) {
-                launchSingleTop = true
+    // Simulated API Logic: Xử lý các ảnh đang ở trạng thái Pending
+    LaunchedEffect(scans.count { it.status == "Pending" }) {
+        scans.filter { it.status == "Pending" }.forEach { pending ->
+            // Smart Focus: Nếu bật thì AI xử lý ảnh sắc nét nhanh hơn
+            val processingTime = if (smartFocus) 1200L else 2500L
+            kotlinx.coroutines.delay(processingTime)
+            
+            onUpdateScan(pending.copy(status = "Success", count = (12..45).random()))
+            
+            // Haptic Confirmation: Rung máy khi quét thành công
+            if (hapticFeedback) {
+                triggerHapticFeedback(context)
             }
         }
     }
 
-    // 2a. System PhotoPicker (Photos app) — no permission needed on API 33+
-    val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            vm.addScan(
-                ScanRecord(
-                    name      = "Gallery Import",
-                    datetime  = nowFormatted(),
-                    fileType  = uriToFileType(context, uri),
-                    status    = "Pending",
-                    imageUri  = uri.toString(),
-                )
-            )
-            navController.navigate(Routes.CURRENT_SCAN) { launchSingleTop = true }
-        }
-    }
-
-    // 2b. Files browser — OpenDocument filtered to image MIME types only
-    //     This covers Downloads, Google Drive, local storage, etc.
-    val filesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            vm.addScan(
-                ScanRecord(
-                    name      = "File Import",
-                    datetime  = nowFormatted(),
-                    fileType  = uriToFileType(context, uri),
-                    status    = "Pending",
-                    imageUri  = uri.toString(),
-                )
-            )
-            navController.navigate(Routes.CURRENT_SCAN) { launchSingleTop = true }
-        }
-    }
-
-    // 3. Camera permission request
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            pendingCaptureUri = createCaptureUri(context)
-            cameraLauncher.launch(pendingCaptureUri!!)
-        } else {
-            showCameraPermissionDialog = true
-        }
-    }
-
-    // ── Camera permission denied dialog ────────────────────────────────────
-    if (showCameraPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showCameraPermissionDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Filled.CameraAlt,
-                    contentDescription = null,
-                    tint = Primary
-                )
-            },
-            title = { Text("Camera access needed") },
-            text  = {
-                Text(
-                    "S.C.P needs camera access to capture scaffold images for counting. " +
-                    "Please grant the Camera permission in your device Settings."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showCameraPermissionDialog = false }) {
-                    Text("OK", color = Primary)
-                }
-            },
-            containerColor = SurfaceContainerLowest,
-        )
-    }
-
-    // ── Actions ──────────────────────────────────────────────────────────────
-    val onTakePhoto: () -> Unit = {
-        when {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
-                    == PackageManager.PERMISSION_GRANTED -> {
-                pendingCaptureUri = createCaptureUri(context)
-                cameraLauncher.launch(pendingCaptureUri!!)
+    val navController = rememberNavController()
+    Scaffold(
+        topBar = { ScaffoldCounterTopBar() },
+        bottomBar = { ScaffoldCounterBottomNav(navController) }
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.CURRENT_SCAN,
+            modifier = Modifier.padding(padding)
+        ) {
+            composable(Routes.INVENTORY) { InventoryScreen(scans) }
+            composable(Routes.CURRENT_SCAN) { CurrentScanScreen(scans, onAddScan) }
+            composable(Routes.SETTINGS) { 
+                SettingsScreen(
+                    email = email, 
+                    onLogout = onLogout, 
+                    navController = navController,
+                    smartFocus = smartFocus,
+                    onSmartFocusChange = { smartFocus = it },
+                    offlineCache = offlineCache,
+                    onOfflineCacheChange = { offlineCache = it },
+                    hapticFeedback = hapticFeedback,
+                    onHapticFeedbackChange = { hapticFeedback = it }
+                ) 
             }
-            else -> cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            composable(Routes.SECURITY) { SecurityScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.MFA) { MFAScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.DEVICES) { DevicesScreen(onBack = { navController.popBackStack() }) }
         }
     }
+}
 
-    // Tapping "Upload Gallery" opens the source picker sheet instead of launching directly
-    val onUploadGallery: () -> Unit = { showUploadSheet = true }
+// ─── Screens ──────────────────────────────────────────────────────────────────
 
-    // ── Upload source bottom sheet ────────────────────────────────────────────
-    if (showUploadSheet) {
-        UploadSourceSheet(
-            onDismiss = { showUploadSheet = false },
-            onPickFromPhotos = {
-                showUploadSheet = false
-                galleryLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-            },
-            onBrowseFiles = {
-                showUploadSheet = false
-                // Pass all common image MIME types so only images are shown in the file browser
-                filesLauncher.launch(
-                    arrayOf("image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "image/heic")
-                )
-            },
-        )
-    }
-
-    // ── UI ────────────────────────────────────────────────────────────────────
-    LazyColumn(
+@Composable
+fun InventoryScreen(scans: List<ScanRecord>) {
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+            .background(Background)
+            .padding(16.dp)
     ) {
-        item { HeroSection() }
-        item { Spacer(Modifier.height(28.dp)) }
-        item { ActionGrid(onTakePhoto = onTakePhoto, onUploadGallery = onUploadGallery) }
-        item { Spacer(Modifier.height(28.dp)) }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Recent Scans",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = OnSurface,
-                    letterSpacing = (-0.3).sp,
-                )
-                if (scans.isNotEmpty()) {
-                    Text(
-                        text = "View All",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Primary,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.clickable {}
-                    )
+        Text("Scan History", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF102A43))
+        Spacer(Modifier.height(16.dp))
+        if (scans.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No scans yet", color = Color(0xFF627D98))
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(scans) { scan ->
+                    RecentScanCard(scan)
                 }
             }
         }
-
-        item { Spacer(Modifier.height(16.dp)) }
-
-        if (scans.isEmpty()) {
-            item { EmptyScansPlaceholder() }
-        } else {
-            items(scans) { scan ->
-                RecentScanCard(scan)
-                Spacer(Modifier.height(12.dp))
-            }
-        }
-
-        item { Spacer(Modifier.height(8.dp)) }
-        item { MetadataStrip() }
     }
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+@Composable
+fun RecentScanCard(scan: ScanRecord) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.White,
+        shadowElevation = 2.dp
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFF1F5F9)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Image, null, tint = Color(0xFF94A3B8))
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(scan.name, fontWeight = FontWeight.Bold, color = Color(0xFF102A43))
+                Text(scan.datetime, fontSize = 12.sp, color = Color(0xFF627D98))
+            }
+            Text("${scan.count}", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF007A8A))
+        }
+    }
+}
 
 @Composable
-private fun EmptyScansPlaceholder() {
+fun CurrentScanScreen(scans: List<ScanRecord> = emptyList(), onAddScan: (ScanRecord) -> Unit = {}) {
+    val context = LocalContext.current
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+    
+    // Lấy thông tin lần cuối cùng quét (Vì onAddScan thêm vào đầu list nên dùng firstOrNull)
+    val lastScan = scans.firstOrNull()
+    val isProcessing = lastScan?.status == "Pending"
+    val lastActivityTitle = if (lastScan != null) "${lastScan.datetime} • ${lastScan.name}" else "No recent activity"
+    
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) pendingCaptureUri?.let { onAddScan(ScanRecord(name="Camera Scan", datetime=nowFormatted(), fileType="JPG", status="Pending", imageUri=it.toString())) }
+    }
+    // Dùng GetMultipleContents để quay lại giao diện chọn file truyền thống
+    val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) {
+            val selectedUris = if (uris.size > 10) uris.take(10) else uris
+            selectedUris.forEach { uri ->
+                onAddScan(ScanRecord(
+                    name = "File Import",
+                    datetime = nowFormatted(),
+                    fileType = uriToFileType(context, uri),
+                    status = "Pending",
+                    imageUri = uri.toString()
+                ))
+            }
+            if (uris.size > 10) Toast.makeText(context, "Only first 10 images selected", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) { pendingCaptureUri = createCaptureUri(context); cameraLauncher.launch(pendingCaptureUri!!) }
+    }
+
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 32.dp),
+            .fillMaxSize()
+            .background(Background)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(
-            imageVector = Icons.Outlined.ImageSearch,
-            contentDescription = null,
-            tint = OutlineVariant,
-            modifier = Modifier.size(48.dp)
-        )
-        Text(
-            text = "No scans yet",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = OnSurfaceVariant,
-        )
-        Text(
-            text = "Take a photo or upload from gallery\nto start counting.",
-            fontSize = 13.sp,
-            color = NavyMuted,
-            textAlign = TextAlign.Center,
-            lineHeight = 19.sp,
-        )
-    }
-}
-
-// ── Upload Source Bottom Sheet ────────────────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun UploadSourceSheet(
-    onDismiss: () -> Unit,
-    onPickFromPhotos: () -> Unit,
-    onBrowseFiles: () -> Unit,
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor   = SurfaceContainerLowest,
-        shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-    ) {
-        Column(
+        // --- 1. Illustration Area ---
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
-        ) {
-            Text(
-                text       = "Choose image source",
-                fontSize   = 17.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color      = OnSurface,
-            )
-            Text(
-                text     = "Select where to import your scaffold image from.",
-                fontSize = 13.sp,
-                color    = OnSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
-            )
-
-            UploadSourceOption(
-                icon        = Icons.Filled.PhotoLibrary,
-                title       = "Photos",
-                description = "Pick from the Photos app on your device",
-                onClick     = onPickFromPhotos,
-            )
-
-            HorizontalDivider(
-                modifier  = Modifier.padding(vertical = 8.dp),
-                thickness = 0.5.dp,
-                color     = OutlineVariant.copy(alpha = 0.4f),
-            )
-
-            UploadSourceOption(
-                icon        = Icons.Filled.Folder,
-                title       = "Browse Files",
-                description = "Open Downloads, Drive, or any local folder — images only",
-                onClick     = onBrowseFiles,
-            )
-        }
-    }
-}
-
-@Composable
-private fun UploadSourceOption(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Primary.copy(alpha = 0.08f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = Primary, modifier = Modifier.size(24.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-            Text(description, fontSize = 12.sp, color = OnSurfaceVariant, lineHeight = 17.sp)
-        }
-        Icon(Icons.Filled.ChevronRight, null, tint = OnSurfaceVariant, modifier = Modifier.size(20.dp))
-    }
-}
-
-// ── Hero Section ──────────────────────────────────────────────────────────────
-
-@Composable
-private fun HeroSection() {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(SurfaceContainerHigh)
-                .padding(horizontal = 12.dp, vertical = 5.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Verified,
-                contentDescription = null,
-                tint = Primary,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = "Construction Ready v4.2",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = OnSurfaceVariant,
-                letterSpacing = 1.5.sp,
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            text = "Precision Scaffold",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = OnSurface,
-            letterSpacing = (-1).sp,
-        )
-        Text(
-            text = "Counting",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontStyle = FontStyle.Italic,
-            color = Primary,
-            letterSpacing = (-1).sp,
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        Text(
-            text = "High-fidelity computer vision for rapid inventory auditing. Select an input method to begin your automated count.",
-            fontSize = 14.sp,
-            color = OnSurfaceVariant,
-            lineHeight = 21.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 8.dp)
-        )
-    }
-}
-
-// ── Action Grid ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun ActionGrid(
-    onTakePhoto: () -> Unit,
-    onUploadGallery: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TakePhotoCard(modifier = Modifier.fillMaxWidth(), onClick = onTakePhoto)
-        UploadGalleryCard(modifier = Modifier.fillMaxWidth(), onClick = onUploadGallery)
-    }
-}
-
-@Composable
-private fun TakePhotoCard(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier = modifier
-            .height(220.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Brush.linearGradient(colors = listOf(Primary, PrimaryContainer)))
-            .clickable(onClick = onClick)
-            .padding(28.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Filled.PhotoCamera,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.15f),
-            modifier = Modifier.size(140.dp).align(Alignment.TopEnd)
-        )
-        Column(modifier = Modifier.align(Alignment.BottomStart)) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AddAPhoto,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("Take Photo", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Open field camera for real-time processing.",
-                fontSize = 12.sp,
-                color = PrimaryFixed.copy(alpha = 0.85f),
-                lineHeight = 17.sp,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "LAUNCH CAMERA",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    letterSpacing = 1.2.sp,
-                )
-                Spacer(Modifier.width(6.dp))
-                Icon(Icons.Filled.ArrowForward, null, tint = Color.White, modifier = Modifier.size(14.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun UploadGalleryCard(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier = modifier
-            .height(200.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceContainerLowest)
-            .border(0.5.dp, OutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(28.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Filled.CloudUpload,
-            contentDescription = null,
-            tint = SurfaceContainerHighest,
-            modifier = Modifier.size(100.dp).align(Alignment.TopEnd)
-        )
-        Column(modifier = Modifier.align(Alignment.BottomStart)) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Primary.copy(alpha = 0.06f))
-                    .border(0.5.dp, Primary.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Filled.FolderOpen, null, tint = Primary, modifier = Modifier.size(28.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-            Text("Upload Gallery", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = OnSurface)
-            Spacer(Modifier.height(4.dp))
-            Text("Import photos for batch analysis.", fontSize = 12.sp, color = OnSurfaceVariant, lineHeight = 17.sp)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("BROWSE FILES", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Primary, letterSpacing = 1.2.sp)
-                Spacer(Modifier.width(6.dp))
-                Icon(Icons.Filled.AttachFile, null, tint = Primary, modifier = Modifier.size(14.dp))
-            }
-        }
-    }
-}
-
-// ── Recent Scan Card ──────────────────────────────────────────────────────────
-
-@Composable
-private fun RecentScanCard(scan: ScanRecord) {
-    val isArchived = scan.status == "Archived"
-    val isPending  = scan.status == "Pending"
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceContainerLowest)
-            .border(0.5.dp, OutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .clickable {}
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Thumbnail placeholder
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(SurfaceContainerHigh),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            if (scan.fileType.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(Primary.copy(alpha = 0.8f))
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                ) {
-                    Text(scan.fileType, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-            }
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = scan.name,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isArchived) OnSurface.copy(alpha = 0.6f) else OnSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(scan.datetime, fontSize = 11.sp, color = OnSurfaceVariant, fontWeight = FontWeight.Medium)
-        }
-
-        Column(horizontalAlignment = Alignment.End) {
-            val (badgeBg, badgeText) = when (scan.status) {
-                "Success"  -> Pair(Color(0xFFCCF0F8), Color(0xFF005270))
-                "Pending"  -> Pair(Color(0xFFFFF3CD), Color(0xFF7A5200))
-                "Archived" -> Pair(SurfaceContainerHigh, OnSurfaceVariant)
-                else       -> Pair(SurfaceContainerHigh, OnSurfaceVariant)
-            }
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(badgeBg)
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = scan.status.uppercase(),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = badgeText,
-                    letterSpacing = 0.5.sp,
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = if (isPending) "—" else "${scan.count}",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black,
-                    color = if (isArchived || isPending) NavyMuted else Primary,
-                    lineHeight = 20.sp,
-                )
-                if (!isPending) {
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        "pcs",
-                        fontSize = 9.sp,
-                        color = if (isArchived) NavyMuted else OnSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 2.dp),
+                .height(320.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.radialGradient(
+                        colors = if (isProcessing) listOf(Color(0xFFE0F2F1), Background) else listOf(Color(0xFFE1F5FE), Background),
+                        radius = 600f
                     )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(contentAlignment = Alignment.BottomCenter) {
+                Surface(
+                    modifier = Modifier.size(200.dp),
+                    shape = RoundedCornerShape(32.dp),
+                    color = Color.White,
+                    shadowElevation = 12.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (isProcessing && lastScan.imageUri.isNotEmpty()) {
+                            // Hiển thị ảnh đang xử lý nếu có URI
+                            AsyncImage(
+                                model = lastScan.imageUri,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(32.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            // Lớp phủ mờ khi đang quét
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(40.dp))
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CropFree,
+                                contentDescription = null,
+                                tint = Color(0xFFB0BEC5),
+                                modifier = Modifier.size(100.dp)
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                repeat(3) { Box(modifier = Modifier.size(6.dp, 40.dp).background(Color(0xFFCFD8DC))) }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(90.dp, 3.dp)
+                                    .rotate(45f)
+                                    .background(Color(0xFFE57373).copy(alpha = 0.8f))
+                            )
+                        }
+                    }
+                }
+                Surface(
+                    modifier = Modifier.offset(y = 15.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isProcessing) Color(0xFFE0F2F1) else Color(0xFFE8EAF6),
+                    border = BorderStroke(1.dp, if (isProcessing) Color(0xFF007A8A) else Color(0xFFC5CAE9))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (isProcessing) {
+                            Text("SCANNING...", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF007A8A), letterSpacing = 0.8.sp)
+                        } else {
+                            Icon(Icons.Default.Bolt, null, tint = Color(0xFF3F51B5), modifier = Modifier.size(16.dp))
+                            Text("SYSTEM IDLE", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF283593), letterSpacing = 0.8.sp)
+                        }
+                    }
                 }
             }
         }
 
-        Icon(Icons.Filled.ChevronRight, null, tint = OnSurfaceVariant, modifier = Modifier.size(20.dp))
+        Column(modifier = Modifier.padding(horizontal = 32.dp)) {
+            Text(
+                text = if (isProcessing) "Analyzing your\nscaffold image" else "No image is being\nprocessed",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Black,
+                color = Color(0xFF102A43),
+                textAlign = TextAlign.Center,
+                lineHeight = 34.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = if (isProcessing) "Please wait while our AI engine identifies and counts the components in your technical capture." 
+                       else "Start a new scaffold scan by capturing an image with your device or browse your local files for a technical blueprint analysis.",
+                fontSize = 14.sp,
+                color = Color(0xFF627D98),
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
+            Spacer(Modifier.height(48.dp))
+
+            Button(
+                onClick = {
+                    val isEmulator = android.os.Build.FINGERPRINT.contains("generic") || 
+                                   android.os.Build.MODEL.contains("Emulator")
+                    
+                    if (isEmulator) {
+                        // MÁY ẢO: Tự động thêm một record giả để test
+                        onAddScan(ScanRecord(
+                            name = "Emulator Scan",
+                            datetime = nowFormatted(),
+                            fileType = "JPG",
+                            status = "Success",
+                            count = (10..50).random(),
+                            imageUri = ""
+                        ))
+                        Toast.makeText(context, "Emulator detected: Adding mock result", Toast.LENGTH_SHORT).show()
+                    } else {
+                        // MÁY THẬT: Mở camera như bình thường
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            pendingCaptureUri = createCaptureUri(context); cameraLauncher.launch(pendingCaptureUri!!)
+                        } else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A8A))
+            ) {
+                Icon(Icons.Default.PhotoCamera, null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("Start New Scan", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            Spacer(Modifier.height(14.dp))
+            Surface(
+                onClick = { filesLauncher.launch("image/*") },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFF1F5F9),
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, null, tint = Color(0xFF007A8A), modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Browse Files", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF007A8A))
+                }
+            }
+
+            Spacer(Modifier.height(48.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+            ) {
+                Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(3.dp, 36.dp).clip(CircleShape).background(if (lastScan != null) Color(0xFF007A8A) else Color(0xFFCBD5E1)))
+                        Spacer(Modifier.width(20.dp))
+                        Column {
+                            Text("LAST ACTIVITY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8), letterSpacing = 0.5.sp)
+                            Text(lastActivityTitle, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334E68))
+                        }
+                    }
+                    Column {
+                        Text("ACTIVE MODEL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8), letterSpacing = 0.5.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF4FC3F7)))
+                            Text("Scaffold-Net v4.2.1", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334E68))
+                        }
+                    }
+                    Column {
+                        Text("DEVICE STATUS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8), letterSpacing = 0.5.sp)
+                        Text("Precision Ready", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334E68))
+                    }
+                }
+            }
+            Spacer(Modifier.height(160.dp))
+        }
     }
 }
 
-// ── Metadata Strip ────────────────────────────────────────────────────────────
-
 @Composable
-private fun MetadataStrip() {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetadataCard(icon = null,                  glowDot = true,  label = "System Status",    value = "Engine: Neural-Count v2.1 (Active)")
-        MetadataCard(icon = Icons.Filled.Storage,  glowDot = false, label = "Sync Progress",    value = "Local Cache: 12 Scans Pending")
-        MetadataCard(icon = Icons.Filled.Memory,   glowDot = false, label = "Device Efficiency",value = "Neural Processing: Optimized")
+fun SettingsScreen(
+    email: String? = null, 
+    onLogout: () -> Unit = {}, 
+    navController: NavHostController? = null,
+    smartFocus: Boolean = true,
+    onSmartFocusChange: (Boolean) -> Unit = {},
+    offlineCache: Boolean = true,
+    onOfflineCacheChange: (Boolean) -> Unit = {},
+    hapticFeedback: Boolean = false,
+    onHapticFeedbackChange: (Boolean) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val showSoon = { Toast.makeText(context, "Feature coming soon in Pro version", Toast.LENGTH_SHORT).show() }
+    var avatarUri by remember { mutableStateOf<Uri?>(null) }
+    
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) avatarUri = uri
     }
-}
 
-@Composable
-private fun MetadataCard(icon: ImageVector?, glowDot: Boolean, label: String, value: String) {
-    Row(
+    // Lấy email và tên thật từ TokenManager
+    val finalEmail = remember(email) {
+        com.example.dadn_app.core.utils.TokenManager.userEmail ?: email ?: "user@example.com"
+    }
+    
+    val finalName = remember {
+        com.example.dadn_app.core.utils.TokenManager.userName ?: finalEmail.split("@").first()
+    }
+
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(SurfaceContainerLow)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+            .fillMaxSize()
+            .background(Background)
+            .verticalScroll(rememberScrollState())
     ) {
-        if (glowDot) {
-            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(PrimaryFixedDim))
-        } else if (icon != null) {
-            Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
-        }
-        Column {
-            Text(label.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant, letterSpacing = 1.2.sp)
-            Spacer(Modifier.height(2.dp))
-            Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
+        Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp)) {
+            Text(
+                text = "Settings",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF102A43),
+                letterSpacing = (-0.5).sp
+            )
+            Text(
+                text = "Configure your industrial scanning protocols and system parameters.",
+                fontSize = 15.sp,
+                color = Color(0xFF627D98),
+                lineHeight = 22.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(85.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFF102A43))
+                            .clickable { avatarLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (avatarUri != null) {
+                            AsyncImage(
+                                model = avatarUri,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(20.dp))
+                    Column {
+                        Text(
+                            text = finalName,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF102A43)
+                        )
+                        Text("Profile Account", fontSize = 14.sp, color = Color(0xFF627D98))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(40.dp))
+
+            SettingsSectionHeader("Account", "Manage your secure credentials and session security levels.")
+            Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                SettingsItemPro(Icons.Default.Lock, "Security & Password", "", onClick = { navController?.navigate(Routes.SECURITY) })
+                SettingsItemPro(Icons.Default.Shield, "Multi-factor Authentication", "ENABLED", isBadge = true, onClick = { navController?.navigate(Routes.MFA) })
+                SettingsItemPro(Icons.Default.Devices, "Authorized Devices", "", onClick = { navController?.navigate(Routes.DEVICES) })
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            SettingsSectionHeader("Scan Preferences", "Optimize the Kinetic Scan engine for your specific hardware environment.")
+            Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                SettingsToggleItem("Smart Focus Assist", "AI-driven clarity optimization for industrial captures", smartFocus) { onSmartFocusChange(it) }
+                SettingsToggleItem("Offline Cache Mode", "Store scanned data when no network is found", offlineCache) { onOfflineCacheChange(it) }
+                SettingsToggleItem("Haptic Confirmation", "Vibrate device on successful scan", hapticFeedback) { onHapticFeedbackChange(it) }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            SettingsSectionHeader("System Information", "Core engine status and versioning metadata.")
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Color(0xFFF0F4F8)),
+                onClick = { showSoon() }
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SystemInfoRow("CORE ENGINE", "v2.4.12-pro")
+                    SystemInfoRow("LAST SYNC", "2023-11-24 09:42 UTC")
+                    SystemInfoRow("NETWORK PROTOCOL", "TLS 1.3 Secure", hasDot = true)
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = buildAnnotatedString {
+                        append("You are currently logged in as ")
+                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF102A43))) {
+                            append(finalEmail)
+                        }
+                    },
+                    fontSize = 12.sp,
+                    color = Color(0xFF627D98),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp)
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC51111))
+                ) {
+                    Text("Sign Out", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+                Spacer(Modifier.height(120.dp))
+            }
         }
     }
 }
 
-// ─── Placeholder Screens ──────────────────────────────────────────────────────
-
 @Composable
-fun CurrentScanScreen() {
-    PlaceholderScreen("Current Scan")
-}
+fun SecurityScreen(onBack: () -> Unit) {
+    var oldPass by remember { mutableStateOf("") }
+    var newPass by remember { mutableStateOf("") }
+    var confirmPass by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
-@Composable
-fun SettingsScreen() {
-    PlaceholderScreen("Settings")
-}
-
-@Composable
-private fun PlaceholderScreen(label: String) {
-    Box(
-        modifier = Modifier.fillMaxSize().background(Background),
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = Modifier.fillMaxSize().background(Background).padding(24.dp)
     ) {
-        Text("$label — Coming Soon", color = NavyMuted, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+            Text("Security & Password", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(32.dp))
+        
+        OutlinedTextField(
+            value = oldPass, onValueChange = { oldPass = it },
+            label = { Text("Current Password") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = newPass, onValueChange = { newPass = it },
+            label = { Text("New Password") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = confirmPass, onValueChange = { confirmPass = it },
+            label = { Text("Confirm New Password") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+        
+        Spacer(Modifier.height(32.dp))
+        Button(
+            onClick = { 
+                Toast.makeText(context, "Password updated successfully", Toast.LENGTH_SHORT).show()
+                onBack()
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A8A))
+        ) {
+            Text("Update Password", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+fun MFAScreen(onBack: () -> Unit) {
+    var isEnabled by remember { mutableStateOf(true) }
+    Column(
+        modifier = Modifier.fillMaxSize().background(Background).padding(24.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+            Text("Multi-factor Authentication", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(32.dp))
+        
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White,
+            border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+        ) {
+            Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Two-Step Verification", fontWeight = FontWeight.Bold)
+                    Text("Add an extra layer of security", fontSize = 13.sp, color = Color(0xFF627D98))
+                }
+                Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
+            }
+        }
+    }
+}
+
+@Composable
+fun DevicesScreen(onBack: () -> Unit) {
+    val deviceName = remember {
+        val manufacturer = android.os.Build.MANUFACTURER
+        val model = android.os.Build.MODEL
+        if (model.startsWith(manufacturer, ignoreCase = true)) model.replaceFirstChar { it.uppercase() }
+        else "${manufacturer.replaceFirstChar { it.uppercase() }} $model"
+    }
+
+    val devices = listOf(
+        "$deviceName (This device)" to "Active now"
+    )
+    Column(
+        modifier = Modifier.fillMaxSize().background(Background).padding(24.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+            Text("Authorized Devices", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(24.dp))
+        
+        devices.forEach { (name, status) ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (name.contains("PC")) Icons.Default.Computer else if (name.contains("iPad")) Icons.Default.TabletMac else Icons.Default.Smartphone,
+                        null, 
+                        tint = Color(0xFF007A8A)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(name, fontWeight = FontWeight.Bold)
+                        Text(status, fontSize = 12.sp, color = Color(0xFF627D98))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String, description: String) {
+    Column {
+        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF005662))
+        Text(description, fontSize = 14.sp, color = Color(0xFF627D98), lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@Composable
+private fun SettingsToggleItem(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFF1F5F9),
+        onClick = { onCheckedChange(!checked) }
+    ) {
+        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF102A43))
+                Text(subtitle, fontSize = 13.sp, color = Color(0xFF627D98))
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF007A8A))
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemInfoRow(label: String, value: String, hasDot: Boolean = false) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF455A64))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (hasDot) Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF4FC3F7)))
+            Spacer(Modifier.width(8.dp))
+            Text(value, fontSize = 13.sp, color = Color(0xFF455A64))
+        }
+    }
+}
+
+@Composable
+private fun SettingsItemPro(icon: ImageVector, title: String, value: String, isBadge: Boolean = false, onClick: () -> Unit = {}) {
+    Surface(onClick = onClick, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = Color(0xFF102A43), modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(20.dp))
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334E68), modifier = Modifier.weight(1f))
+            if (value.isNotEmpty()) {
+                if (isBadge) {
+                    Surface(color = Color(0xFFE0F2F1), shape = RoundedCornerShape(8.dp)) {
+                        Text(value, fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF007A8A), modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                    }
+                } else Text(value, fontSize = 14.sp, color = Color(0xFF829AB1))
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = Color(0xFFBCCCDC), modifier = Modifier.size(20.dp))
+        }
     }
 }
 
 // ─── Preview ──────────────────────────────────────────────────────────────────
 
-@Preview(showBackground = true, showSystemUi = true)
+@Preview(showBackground = true, heightDp = 1800)
 @Composable
-private fun MainScreenPreview() {
-    Dadn_appTheme { MainScreen() }
+private fun CurrentScanPreview() {
+    val navController = rememberNavController()
+    Dadn_appTheme {
+        Scaffold(
+            topBar = { ScaffoldCounterTopBar() },
+            bottomBar = { ScaffoldCounterBottomNav(navController) }
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding).fillMaxSize().background(Background)) {
+                CurrentScanScreen()
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, heightDp = 1800)
+@Composable
+private fun SettingsPreview() {
+    val navController = rememberNavController()
+    Dadn_appTheme {
+        Scaffold(
+            topBar = { ScaffoldCounterTopBar() },
+            bottomBar = { ScaffoldCounterBottomNav(navController) }
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding).fillMaxSize().background(Background)) {
+                SettingsScreen()
+            }
+        }
+    }
 }
