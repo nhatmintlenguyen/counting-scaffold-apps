@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.dadn_app.core.utils.TokenManager
 import com.example.dadn_app.ui.viewmodel.AuthViewModel
 
 // ─── Top-level route constants ────────────────────────────────────────────────
@@ -65,7 +66,15 @@ fun AppNavGraph(startDestination: String) {
         }
 
         composable(AppRoutes.MAIN) {
-            MainScreen()
+            MainScreen(
+                onLogout = {
+                    TokenManager.clearTokens()
+                    navController.navigate(AppRoutes.LOGIN) {
+                        popUpTo(AppRoutes.MAIN) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,9 +27,21 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dadn_app.ui.theme.*
+import kotlinx.coroutines.delay
 
 @Composable
-fun ProcessingScreen() {
+fun ProcessingScreen(
+    onProcessingComplete: () -> Unit = {},
+) {
+    // TEMP TESTING ONLY:
+    // Replace this fake 10-second wait with the real server upload / processing
+    // callback when backend image processing is implemented.
+    LaunchedEffect(Unit) {
+        delay(10_000L)
+        onProcessingComplete()
+    }
+    // END TEMP TESTING ONLY
+
     Column(
         modifier = Modifier
             .fillMaxSize()

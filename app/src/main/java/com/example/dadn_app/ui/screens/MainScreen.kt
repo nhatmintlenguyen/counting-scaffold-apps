@@ -56,7 +56,12 @@ import java.util.*
 object Routes {
     const val INVENTORY    = "inventory"
     const val CURRENT_SCAN = "current_scan"
+    const val PROCESSING   = "processing"
+    const val RESULT       = "result"
     const val SETTINGS     = "settings"
+    const val SECURITY     = "security"
+    const val MFA          = "mfa"
+    const val DEVICES      = "devices"
 }
 
 // ─── Nav item model ───────────────────────────────────────────────────────────
@@ -162,15 +167,20 @@ fun ScaffoldCounterBottomNav(navController: NavHostController) {
             )
     ) {
         bottomNavItems.forEach { item ->
-            val selected = currentRoute == item.route
+            val selected = currentRoute == item.route ||
+                    (item.route == Routes.CURRENT_SCAN &&
+                            (currentRoute == Routes.PROCESSING || currentRoute == Routes.RESULT))
             NavigationBarItem(
                 selected = selected,
                 onClick = {
                     if (!selected) {
                         navController.navigate(item.route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            if (item.route == Routes.INVENTORY) {
+                                popUpTo(Routes.INVENTORY) { inclusive = true }
+                            } else {
+                                popUpTo(Routes.INVENTORY) { inclusive = false }
+                            }
                             launchSingleTop = true
-                            restoreState    = true
                         }
                     }
                 },
@@ -206,6 +216,7 @@ fun ScaffoldCounterBottomNav(navController: NavHostController) {
 @Composable
 fun ScaffoldCounterNavGraph(
     navController: NavHostController,
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -215,14 +226,28 @@ fun ScaffoldCounterNavGraph(
     ) {
         composable(Routes.INVENTORY)    { HomeScreen(navController) }
         composable(Routes.CURRENT_SCAN) { CurrentScanScreen() }
-        composable(Routes.SETTINGS)     { SettingsScreen() }
+        composable(Routes.PROCESSING) {
+            ProcessingScreen(
+                onProcessingComplete = {
+                    navController.navigate(Routes.RESULT) {
+                        popUpTo(Routes.PROCESSING) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+        composable(Routes.RESULT)       { ResultScreen() }
+        composable(Routes.SETTINGS)     { SettingsScreen(navController = navController, onLogout = onLogout) }
+        composable(Routes.SECURITY)     { SecurityScreen(onBack = { navController.popBackStack() }) }
+        composable(Routes.MFA)          { MFAScreen(onBack = { navController.popBackStack() }) }
+        composable(Routes.DEVICES)      { DevicesScreen(onBack = { navController.popBackStack() }) }
     }
 }
 
 // ─── Main Screen (entry point) ────────────────────────────────────────────────
 
 @Composable
-fun MainScreen() {
+fun MainScreen(onLogout: () -> Unit = {}) {
     val navController = rememberNavController()
 
     Scaffold(
@@ -232,6 +257,7 @@ fun MainScreen() {
     ) { innerPadding ->
         ScaffoldCounterNavGraph(
             navController = navController,
+            onLogout      = onLogout,
             modifier      = Modifier.padding(innerPadding),
         )
     }
@@ -272,7 +298,7 @@ fun HomeScreen(
                     imageUri  = uri.toString(),
                 )
             )
-            navController.navigate(Routes.CURRENT_SCAN) {
+            navController.navigate(Routes.PROCESSING) {
                 launchSingleTop = true
             }
         }
@@ -292,7 +318,7 @@ fun HomeScreen(
                     imageUri  = uri.toString(),
                 )
             )
-            navController.navigate(Routes.CURRENT_SCAN) { launchSingleTop = true }
+            navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
         }
     }
 
@@ -311,7 +337,7 @@ fun HomeScreen(
                     imageUri  = uri.toString(),
                 )
             )
-            navController.navigate(Routes.CURRENT_SCAN) { launchSingleTop = true }
+            navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
         }
     }
 
@@ -874,12 +900,7 @@ private fun MetadataCard(icon: ImageVector?, glowDot: Boolean, label: String, va
 
 @Composable
 fun CurrentScanScreen() {
-    PlaceholderScreen("Current Scan")
-}
-
-@Composable
-fun SettingsScreen() {
-    PlaceholderScreen("Settings")
+    NoScanScreen()
 }
 
 @Composable
