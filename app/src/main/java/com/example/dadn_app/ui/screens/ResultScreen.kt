@@ -13,19 +13,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.dadn_app.ui.theme.*
 import kotlin.random.Random
 
 @Composable
-fun ResultScreen() {
+fun ResultScreen(
+    imageUri: String? = null,
+    scaffoldCount: Int? = null,
+) {
     // TEMP TESTING ONLY:
     // Replace this random hardcoded scaffold count with the real count returned
     // by the backend processing API when server-side processing is connected.
-    val scaffoldCount = remember { Random.nextInt(12, 46) }
+    val resolvedScaffoldCount = scaffoldCount ?: remember { Random.nextInt(12, 46) }
     // END TEMP TESTING ONLY
 
     Column(
@@ -35,16 +40,28 @@ fun ResultScreen() {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-        // Image Header Section (Completed state)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(OutlineVariant.copy(alpha = 0.5f)), // Placeholder for scaffold image
+                .background(OutlineVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.BottomStart
         ) {
-            // Semi-transparent overlay card
+            if (!imageUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUri,
+                    contentDescription = "Processed image",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.14f))
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .padding(16.dp)
@@ -158,7 +175,7 @@ fun ResultScreen() {
                     )
                 }
                 Text(
-                    text = scaffoldCount.toString(),
+                    text = resolvedScaffoldCount.toString(),
                     fontSize = 42.sp,
                     fontWeight = FontWeight.Black,
                     color = Color(0xFF2E7D32),
@@ -182,7 +199,7 @@ fun ResultScreen() {
                 state = StepState.Completed,
                 title = "QUANTIFICATION",
                 description = "Structural nodes identified",
-                extraText = "$scaffoldCount Found"
+                extraText = "$resolvedScaffoldCount Found"
             )
 
             StepCard(

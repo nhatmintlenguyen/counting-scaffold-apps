@@ -2,6 +2,7 @@ package com.example.dadn_app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -9,11 +10,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,26 +22,24 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.dadn_app.ui.theme.*
-import kotlinx.coroutines.delay
+import com.example.dadn_app.ui.viewmodel.ProcessingUiState
 
 @Composable
 fun ProcessingScreen(
-    onProcessingComplete: () -> Unit = {},
+    imageUri: String? = null,
+    uiState: ProcessingUiState = ProcessingUiState.Processing(0L),
+    onDismissError: () -> Unit = {},
 ) {
-    // TEMP TESTING ONLY:
-    // Replace this fake 10-second wait with the real server upload / processing
-    // callback when backend image processing is implemented.
-    LaunchedEffect(Unit) {
-        delay(10_000L)
-        onProcessingComplete()
-    }
-    // END TEMP TESTING ONLY
+    val isError = uiState is ProcessingUiState.Error
+    val errorState = uiState as? ProcessingUiState.Error
 
     Column(
         modifier = Modifier
@@ -49,16 +48,28 @@ fun ProcessingScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-        // Image Header Section
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(220.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(OutlineVariant.copy(alpha = 0.5f)), // Placeholder for scaffold image
+                .background(OutlineVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.BottomStart
         ) {
-            // Semi-transparent overlay card
+            if (!imageUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUri,
+                    contentDescription = "Image being processed",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.22f))
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .padding(16.dp)
@@ -80,14 +91,14 @@ fun ProcessingScreen(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Analyzing image...",
+                            text = if (isError) "Analysis failed" else "Analyzing image...",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = OnSurface,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "AI-ENGINE:\nKINETIC_SLATE_V4",
+                            text = if (isError) "AI-ENGINE:\nKINETIC_SLATE_V4\nERROR STATE" else "AI-ENGINE:\nKINETIC_SLATE_V4",
                             fontSize = 10.sp,
                             color = OnSurfaceVariant,
                             letterSpacing = 0.5.sp,
@@ -96,10 +107,10 @@ fun ProcessingScreen(
                         )
                     }
                     Text(
-                        text = "64%",
+                        text = if (isError) "ERR" else processingPercentLabel(uiState),
                         fontSize = 28.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Primary,
+                        color = if (isError) Error else Primary,
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                     )
                 }
@@ -116,10 +127,10 @@ fun ProcessingScreen(
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Text(
-                text = "PROCESSING THREAD 04",
+                text = if (isError) "PROCESSING ERROR" else "PROCESSING THREAD 04",
                 fontSize = 9.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Primary,
+                color = if (isError) Error else Primary,
                 letterSpacing = 1.sp,
             )
         }
@@ -127,7 +138,7 @@ fun ProcessingScreen(
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "Counting scaffolds...",
+            text = if (isError) "Processing could not complete" else "Counting scaffolds...",
             fontSize = 32.sp,
             fontWeight = FontWeight.ExtraBold,
             color = OnSurface,
@@ -137,7 +148,11 @@ fun ProcessingScreen(
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Neural network isolating structural segments\nand cross-referencing against safety\nparameters.",
+            text = if (isError) {
+                errorState?.message ?: "The image processing job failed."
+            } else {
+                "Neural network isolating structural segments\nand cross-referencing against safety\nparameters."
+            },
             fontSize = 15.sp,
             color = OnSurfaceVariant,
             lineHeight = 22.sp,
@@ -145,31 +160,35 @@ fun ProcessingScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        // Stepper
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Step 1: SEGMENTATION (Completed)
-            StepCard(
-                state = StepState.Completed,
-                title = "SEGMENTATION",
-                description = "Geometric mesh generation complete",
-                extraText = null
+        if (isError) {
+            ErrorStateCard(
+                message = errorState?.message ?: "Processing failed.",
+                timedOut = errorState?.timedOut == true,
+                onDismiss = onDismissError,
             )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                StepCard(
+                    state = StepState.Completed,
+                    title = "SEGMENTATION",
+                    description = "Geometric mesh generation complete",
+                    extraText = null
+                )
 
-            // Step 2: QUANTIFICATION (Processing)
-            StepCard(
-                state = StepState.Processing,
-                title = "QUANTIFICATION",
-                description = "Counting structural nodes... ",
-                extraText = "428 Found"
-            )
+                StepCard(
+                    state = StepState.Processing,
+                    title = "QUANTIFICATION",
+                    description = "Polling mock backend...",
+                    extraText = processingEtaLabel(uiState)
+                )
 
-            // Step 3: VALIDATION (Pending)
-            StepCard(
-                state = StepState.Pending,
-                title = "VALIDATION",
-                description = "Pending data integrity check",
-                extraText = null
-            )
+                StepCard(
+                    state = StepState.Pending,
+                    title = "VALIDATION",
+                    description = "Pending data integrity check",
+                    extraText = null
+                )
+            }
         }
 
         Spacer(Modifier.height(40.dp))
@@ -192,6 +211,57 @@ fun ProcessingScreen(
 
 enum class StepState {
     Completed, Processing, Pending
+}
+
+@Composable
+private fun ErrorStateCard(
+    message: String,
+    timedOut: Boolean,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = ErrorContainer,
+        border = BorderStroke(1.dp, Error.copy(alpha = 0.2f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Error)
+                Column {
+                    Text(
+                        text = if (timedOut) "Processing timeout" else "Processing error",
+                        fontWeight = FontWeight.Bold,
+                        color = Error,
+                    )
+                    Text(message, color = OnErrorContainer, fontSize = 13.sp, lineHeight = 18.sp)
+                }
+            }
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Error),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("Back to Current Scan", color = OnError)
+            }
+        }
+    }
+}
+
+private fun processingPercentLabel(uiState: ProcessingUiState): String {
+    val elapsed = (uiState as? ProcessingUiState.Processing)?.elapsedMillis ?: 0L
+    val maxForUi = 30_000f
+    val percent = ((elapsed / maxForUi) * 100f).toInt().coerceIn(5, 95)
+    return "$percent%"
+}
+
+private fun processingEtaLabel(uiState: ProcessingUiState): String {
+    val elapsed = (uiState as? ProcessingUiState.Processing)?.elapsedMillis ?: 0L
+    val seconds = (elapsed / 1000L).coerceAtLeast(0L)
+    return " ${seconds}s"
 }
 
 @Composable

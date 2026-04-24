@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -37,17 +38,20 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import coil.compose.AsyncImage
 import com.example.dadn_app.data.local.ScanRecord
 import com.example.dadn_app.ui.theme.*
 import com.example.dadn_app.ui.viewmodel.HomeViewModel
+import com.example.dadn_app.ui.viewmodel.ProcessingUiState
+import kotlinx.coroutines.flow.collectLatest
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -56,6 +60,7 @@ import java.util.*
 object Routes {
     const val INVENTORY    = "inventory"
     const val CURRENT_SCAN = "current_scan"
+    const val CAMERA       = "camera"
     const val PROCESSING   = "processing"
     const val RESULT       = "result"
     const val SETTINGS     = "settings"
@@ -84,20 +89,30 @@ private val bottomNavItems = listOf(
 private fun nowFormatted(): String =
     SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()).format(Date())
 
-/**
- * Creates an empty image file in the app's cache and returns a FileProvider URI
- * that can be passed to ACTION_IMAGE_CAPTURE.
- */
-private fun createCaptureUri(context: Context): Uri {
-    val dir = File(context.cacheDir, "camera").also { it.mkdirs() }
-    val file = File.createTempFile("capture_", ".jpg", dir)
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-}
-
 /** Extracts a human-readable file extension from a content:// URI. */
 private fun uriToFileType(context: Context, uri: Uri): String {
     val mime = context.contentResolver.getType(uri) ?: return ""
     return MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.uppercase() ?: ""
+}
+
+/**
+ * Copies camera/gallery/file-picker images into app-private storage so Room can
+ * keep a durable URI for history thumbnails and processing/result previews.
+ */
+private fun copyScanImageToInternalStorage(context: Context, sourceUri: Uri, fileType: String): Uri {
+    return try {
+        val extension = fileType.lowercase(Locale.getDefault()).ifBlank { "jpg" }
+        val dir = File(context.filesDir, "scan_images").also { it.mkdirs() }
+        val target = File(dir, "scan_${System.currentTimeMillis()}.$extension")
+
+        context.contentResolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(target).use { output -> input.copyTo(output) }
+        } ?: return sourceUri
+
+        Uri.fromFile(target)
+    } catch (_: Exception) {
+        sourceUri
+    }
 }
 
 // ─── Top App Bar ──────────────────────────────────────────────────────────────
@@ -169,7 +184,9 @@ fun ScaffoldCounterBottomNav(navController: NavHostController) {
         bottomNavItems.forEach { item ->
             val selected = currentRoute == item.route ||
                     (item.route == Routes.CURRENT_SCAN &&
-                            (currentRoute == Routes.PROCESSING || currentRoute == Routes.RESULT))
+                            (currentRoute == Routes.CAMERA ||
+                                    currentRoute == Routes.PROCESSING ||
+                                    currentRoute == Routes.RESULT))
             NavigationBarItem(
                 selected = selected,
                 onClick = {
@@ -217,6 +234,12 @@ fun ScaffoldCounterBottomNav(navController: NavHostController) {
 fun ScaffoldCounterNavGraph(
     navController: NavHostController,
     onLogout: () -> Unit,
+    activeImageUri: String?,
+    onActiveImageUriChange: (String) -> Unit,
+    activeScanId: Int?,
+    onActiveScanIdChange: (Int?) -> Unit,
+    activeResultCount: Int?,
+    onActiveResultCountChange: (Int?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -224,19 +247,63 @@ fun ScaffoldCounterNavGraph(
         startDestination = Routes.INVENTORY,
         modifier         = modifier,
     ) {
-        composable(Routes.INVENTORY)    { HomeScreen(navController) }
-        composable(Routes.CURRENT_SCAN) { CurrentScanScreen() }
-        composable(Routes.PROCESSING) {
-            ProcessingScreen(
-                onProcessingComplete = {
-                    navController.navigate(Routes.RESULT) {
-                        popUpTo(Routes.PROCESSING) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }
+        composable(Routes.INVENTORY)    {
+            HomeScreen(
+                navController = navController,
+                onActiveImageUriChange = onActiveImageUriChange,
+                onActiveScanIdChange = onActiveScanIdChange,
+                onActiveResultCountChange = onActiveResultCountChange,
             )
         }
-        composable(Routes.RESULT)       { ResultScreen() }
+        composable(Routes.CURRENT_SCAN) {
+            CurrentScanScreen(
+                navController = navController,
+                activeScanId = activeScanId,
+                onActiveScanIdChange = onActiveScanIdChange,
+                onActiveImageUriChange = onActiveImageUriChange,
+                onActiveResultCountChange = onActiveResultCountChange,
+            )
+        }
+        composable(Routes.CAMERA) {
+            val vm: HomeViewModel = viewModel()
+            SquareCameraCaptureScreen(
+                onImageCaptured = { processedSquareUri ->
+                    vm.addScanAndStartProcessing(
+                        ScanRecord(
+                            name = "Field Capture",
+                            datetime = nowFormatted(),
+                            fileType = "JPG",
+                            status = "Pending",
+                            imageUri = processedSquareUri.toString(),
+                        )
+                    ) { scanId ->
+                        onActiveScanIdChange(scanId)
+                        onActiveImageUriChange(processedSquareUri.toString())
+                        onActiveResultCountChange(null)
+                        navController.navigate(Routes.PROCESSING) {
+                            popUpTo(Routes.CAMERA) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onCancel = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.PROCESSING) {
+            CurrentScanScreen(
+                navController = navController,
+                activeScanId = activeScanId,
+                onActiveScanIdChange = onActiveScanIdChange,
+                onActiveImageUriChange = onActiveImageUriChange,
+                onActiveResultCountChange = onActiveResultCountChange,
+            )
+        }
+        composable(Routes.RESULT) {
+            ResultScreen(
+                imageUri = activeImageUri,
+                scaffoldCount = activeResultCount,
+            )
+        }
         composable(Routes.SETTINGS)     { SettingsScreen(navController = navController, onLogout = onLogout) }
         composable(Routes.SECURITY)     { SecurityScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.MFA)          { MFAScreen(onBack = { navController.popBackStack() }) }
@@ -249,6 +316,9 @@ fun ScaffoldCounterNavGraph(
 @Composable
 fun MainScreen(onLogout: () -> Unit = {}) {
     val navController = rememberNavController()
+    var activeImageUri by remember { mutableStateOf<String?>(null) }
+    var activeScanId by remember { mutableStateOf<Int?>(null) }
+    var activeResultCount by remember { mutableStateOf<Int?>(null) }
 
     Scaffold(
         topBar    = { ScaffoldCounterTopBar() },
@@ -258,6 +328,12 @@ fun MainScreen(onLogout: () -> Unit = {}) {
         ScaffoldCounterNavGraph(
             navController = navController,
             onLogout      = onLogout,
+            activeImageUri = activeImageUri,
+            onActiveImageUriChange = { activeImageUri = it },
+            activeScanId = activeScanId,
+            onActiveScanIdChange = { activeScanId = it },
+            activeResultCount = activeResultCount,
+            onActiveResultCountChange = { activeResultCount = it },
             modifier      = Modifier.padding(innerPadding),
         )
     }
@@ -268,14 +344,15 @@ fun MainScreen(onLogout: () -> Unit = {}) {
 @Composable
 fun HomeScreen(
     navController: NavHostController,
+    onActiveImageUriChange: (String) -> Unit,
+    onActiveScanIdChange: (Int?) -> Unit,
+    onActiveResultCountChange: (Int?) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val scans by vm.scans.collectAsState()
 
     // ── State ────────────────────────────────────────────────────────────────
-    // URI written just before launching the camera so the capture result callback can read it
-    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
     // Controls the rationale/denied dialog
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     // Controls the upload-source bottom sheet
@@ -283,71 +360,61 @@ fun HomeScreen(
 
     // ── Activity result launchers ─────────────────────────────────────────────
 
-    // 1. System camera — TakePicture writes the photo to pendingCaptureUri
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success) {
-            val uri = pendingCaptureUri ?: return@rememberLauncherForActivityResult
-            vm.addScan(
-                ScanRecord(
-                    name      = "Field Capture",
-                    datetime  = nowFormatted(),
-                    fileType  = "JPG",
-                    status    = "Pending",
-                    imageUri  = uri.toString(),
-                )
-            )
-            navController.navigate(Routes.PROCESSING) {
-                launchSingleTop = true
-            }
-        }
-    }
-
-    // 2a. System PhotoPicker (Photos app) — no permission needed on API 33+
+    // 1a. System PhotoPicker (Photos app) — no permission needed on API 33+
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            vm.addScan(
+            val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+            val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+            vm.addScanAndStartProcessing(
                 ScanRecord(
                     name      = "Gallery Import",
                     datetime  = nowFormatted(),
-                    fileType  = uriToFileType(context, uri),
+                    fileType  = fileType,
                     status    = "Pending",
-                    imageUri  = uri.toString(),
+                    imageUri  = storedUri.toString(),
                 )
-            )
-            navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            ) { scanId ->
+                onActiveScanIdChange(scanId)
+                onActiveImageUriChange(storedUri.toString())
+                onActiveResultCountChange(null)
+                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            }
         }
     }
 
-    // 2b. Files browser — OpenDocument filtered to image MIME types only
+    // 1b. Files browser — OpenDocument filtered to image MIME types only
     //     This covers Downloads, Google Drive, local storage, etc.
     val filesLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            vm.addScan(
+            val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+            val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+            vm.addScanAndStartProcessing(
                 ScanRecord(
                     name      = "File Import",
                     datetime  = nowFormatted(),
-                    fileType  = uriToFileType(context, uri),
+                    fileType  = fileType,
                     status    = "Pending",
-                    imageUri  = uri.toString(),
+                    imageUri  = storedUri.toString(),
                 )
-            )
-            navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            ) { scanId ->
+                onActiveScanIdChange(scanId)
+                onActiveImageUriChange(storedUri.toString())
+                onActiveResultCountChange(null)
+                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            }
         }
     }
 
-    // 3. Camera permission request
+    // 2. Camera permission request
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            pendingCaptureUri = createCaptureUri(context)
-            cameraLauncher.launch(pendingCaptureUri!!)
+            navController.navigate(Routes.CAMERA) { launchSingleTop = true }
         } else {
             showCameraPermissionDialog = true
         }
@@ -385,8 +452,7 @@ fun HomeScreen(
         when {
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
                     == PackageManager.PERMISSION_GRANTED -> {
-                pendingCaptureUri = createCaptureUri(context)
-                cameraLauncher.launch(pendingCaptureUri!!)
+                navController.navigate(Routes.CAMERA) { launchSingleTop = true }
             }
             else -> cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -769,6 +835,7 @@ private fun UploadGalleryCard(modifier: Modifier = Modifier, onClick: () -> Unit
 private fun RecentScanCard(scan: ScanRecord) {
     val isArchived = scan.status == "Archived"
     val isPending  = scan.status == "Pending"
+    val isError    = scan.status == "Error"
 
     Row(
         modifier = Modifier
@@ -781,7 +848,6 @@ private fun RecentScanCard(scan: ScanRecord) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Thumbnail placeholder
         Box(
             modifier = Modifier
                 .size(64.dp)
@@ -789,6 +855,27 @@ private fun RecentScanCard(scan: ScanRecord) {
                 .background(SurfaceContainerHigh),
             contentAlignment = Alignment.BottomEnd
         ) {
+            if (scan.imageUri.isNotBlank()) {
+                AsyncImage(
+                    model = scan.imageUri,
+                    contentDescription = "${scan.name} image",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.08f))
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.Image,
+                    contentDescription = null,
+                    tint = NavyMuted,
+                    modifier = Modifier.align(Alignment.Center).size(28.dp)
+                )
+            }
+
             if (scan.fileType.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -819,6 +906,7 @@ private fun RecentScanCard(scan: ScanRecord) {
             val (badgeBg, badgeText) = when (scan.status) {
                 "Success"  -> Pair(Color(0xFFCCF0F8), Color(0xFF005270))
                 "Pending"  -> Pair(Color(0xFFFFF3CD), Color(0xFF7A5200))
+                "Error"    -> Pair(Color(0xFFFFDAD6), Color(0xFF93000A))
                 "Archived" -> Pair(SurfaceContainerHigh, OnSurfaceVariant)
                 else       -> Pair(SurfaceContainerHigh, OnSurfaceVariant)
             }
@@ -839,13 +927,13 @@ private fun RecentScanCard(scan: ScanRecord) {
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = if (isPending) "—" else "${scan.count}",
+                    text = if (isPending || isError) "—" else "${scan.count}",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Black,
-                    color = if (isArchived || isPending) NavyMuted else Primary,
+                    color = if (isArchived || isPending || isError) NavyMuted else Primary,
                     lineHeight = 20.sp,
                 )
-                if (!isPending) {
+                if (!isPending && !isError) {
                     Spacer(Modifier.width(2.dp))
                     Text(
                         "pcs",
@@ -899,8 +987,88 @@ private fun MetadataCard(icon: ImageVector?, glowDot: Boolean, label: String, va
 // ─── Placeholder Screens ──────────────────────────────────────────────────────
 
 @Composable
-fun CurrentScanScreen() {
-    NoScanScreen()
+fun CurrentScanScreen(
+    navController: NavHostController,
+    activeScanId: Int?,
+    onActiveScanIdChange: (Int?) -> Unit,
+    onActiveImageUriChange: (String) -> Unit,
+    onActiveResultCountChange: (Int?) -> Unit,
+    vm: HomeViewModel = viewModel(),
+) {
+    val currentActiveScan by vm.currentActiveScan.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val trackedScanId = currentActiveScan?.id ?: activeScanId
+
+    val trackedScan by produceState<ScanRecord?>(initialValue = null, key1 = trackedScanId) {
+        if (trackedScanId == null) {
+            value = null
+            return@produceState
+        }
+        vm.observeScan(trackedScanId).collectLatest { value = it }
+    }
+
+    val processingState by produceState<ProcessingUiState>(
+        initialValue = ProcessingUiState.Idle,
+        key1 = trackedScanId,
+    ) {
+        if (trackedScanId == null) {
+            value = ProcessingUiState.Idle
+            return@produceState
+        }
+        vm.observeProcessingUiState(trackedScanId).collectLatest { value = it }
+    }
+
+    LaunchedEffect(trackedScan?.id, trackedScan?.imageUri) {
+        val scan = trackedScan ?: return@LaunchedEffect
+        if (scan.status == "Pending") {
+            vm.ensureProcessingStarted(scan.id, scan.imageUri)
+        }
+    }
+
+    LaunchedEffect(currentRoute, activeScanId, trackedScan?.id, trackedScan?.status, trackedScan?.count) {
+        val scan = trackedScan ?: return@LaunchedEffect
+        if (
+            currentRoute == Routes.PROCESSING &&
+            activeScanId != null &&
+            scan.id == activeScanId &&
+            scan.status == "Success"
+        ) {
+            onActiveImageUriChange(scan.imageUri)
+            onActiveResultCountChange(scan.count)
+            onActiveScanIdChange(null)
+            navController.navigate(Routes.RESULT) {
+                popUpTo(Routes.PROCESSING) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    val shouldShowProcessing =
+        trackedScan?.status == "Pending" ||
+            (activeScanId != null &&
+                trackedScan?.id == activeScanId &&
+                processingState is ProcessingUiState.Error)
+
+    if (shouldShowProcessing && trackedScan != null) {
+        ProcessingScreen(
+            imageUri = trackedScan?.imageUri,
+            uiState = when {
+                trackedScan?.status == "Pending" -> processingState
+                processingState is ProcessingUiState.Error -> processingState
+                else -> ProcessingUiState.Processing(0L)
+            },
+            onDismissError = {
+                onActiveScanIdChange(null)
+                navController.navigate(Routes.CURRENT_SCAN) {
+                    popUpTo(Routes.PROCESSING) { inclusive = true }
+                    launchSingleTop = true
+                }
+            },
+        )
+    } else {
+        NoScanScreen()
+    }
 }
 
 @Composable
