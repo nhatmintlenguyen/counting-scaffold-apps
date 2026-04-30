@@ -46,6 +46,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.example.dadn_app.data.local.ScanRecord
+import com.example.dadn_app.data.repository.ProcessingResultMapper
+import com.example.dadn_app.data.repository.YoloDetection
 import com.example.dadn_app.ui.theme.*
 import com.example.dadn_app.ui.viewmodel.HomeViewModel
 import com.example.dadn_app.ui.viewmodel.ProcessingUiState
@@ -119,7 +121,10 @@ private fun copyScanImageToInternalStorage(context: Context, sourceUri: Uri, fil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScaffoldCounterTopBar() {
+fun ScaffoldCounterTopBar(
+    onAccountClick: () -> Unit = {},
+    avatarUri: String? = null,
+) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarBg),
         navigationIcon = {
@@ -148,15 +153,26 @@ fun ScaffoldCounterTopBar() {
         title = {},
         actions = {
             IconButton(
-                onClick = {},
+                onClick = onAccountClick,
                 modifier = Modifier.padding(end = 8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.AccountCircle,
-                    contentDescription = "Account",
-                    tint = OnSurfaceVariant,
-                    modifier = Modifier.size(26.dp)
-                )
+                if (avatarUri != null) {
+                    AsyncImage(
+                        model = avatarUri,
+                        contentDescription = "Account",
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.AccountCircle,
+                        contentDescription = "Account",
+                        tint = OnSurfaceVariant,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             }
         },
         modifier = Modifier.shadow(2.dp)
@@ -234,12 +250,17 @@ fun ScaffoldCounterBottomNav(navController: NavHostController) {
 fun ScaffoldCounterNavGraph(
     navController: NavHostController,
     onLogout: () -> Unit,
+    onAvatarChanged: (String?) -> Unit,
     activeImageUri: String?,
     onActiveImageUriChange: (String) -> Unit,
     activeScanId: Int?,
     onActiveScanIdChange: (Int?) -> Unit,
     activeResultCount: Int?,
     onActiveResultCountChange: (Int?) -> Unit,
+    activeProcessingTimeMillis: Long?,
+    onActiveProcessingTimeMillisChange: (Long?) -> Unit,
+    activeDetections: List<YoloDetection>,
+    onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -253,6 +274,8 @@ fun ScaffoldCounterNavGraph(
                 onActiveImageUriChange = onActiveImageUriChange,
                 onActiveScanIdChange = onActiveScanIdChange,
                 onActiveResultCountChange = onActiveResultCountChange,
+                onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
+                onActiveDetectionsChange = onActiveDetectionsChange,
             )
         }
         composable(Routes.CURRENT_SCAN) {
@@ -262,6 +285,8 @@ fun ScaffoldCounterNavGraph(
                 onActiveScanIdChange = onActiveScanIdChange,
                 onActiveImageUriChange = onActiveImageUriChange,
                 onActiveResultCountChange = onActiveResultCountChange,
+                onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
+                onActiveDetectionsChange = onActiveDetectionsChange,
             )
         }
         composable(Routes.CAMERA) {
@@ -280,6 +305,8 @@ fun ScaffoldCounterNavGraph(
                         onActiveScanIdChange(scanId)
                         onActiveImageUriChange(processedSquareUri.toString())
                         onActiveResultCountChange(null)
+                        onActiveProcessingTimeMillisChange(null)
+                        onActiveDetectionsChange(emptyList())
                         navController.navigate(Routes.PROCESSING) {
                             popUpTo(Routes.CAMERA) { inclusive = true }
                             launchSingleTop = true
@@ -296,15 +323,25 @@ fun ScaffoldCounterNavGraph(
                 onActiveScanIdChange = onActiveScanIdChange,
                 onActiveImageUriChange = onActiveImageUriChange,
                 onActiveResultCountChange = onActiveResultCountChange,
+                onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
+                onActiveDetectionsChange = onActiveDetectionsChange,
             )
         }
         composable(Routes.RESULT) {
             ResultScreen(
                 imageUri = activeImageUri,
                 scaffoldCount = activeResultCount,
+                processingTimeMillis = activeProcessingTimeMillis,
+                detections = activeDetections,
             )
         }
-        composable(Routes.SETTINGS)     { SettingsScreen(navController = navController, onLogout = onLogout) }
+        composable(Routes.SETTINGS)     {
+            SettingsScreen(
+                navController = navController,
+                onLogout = onLogout,
+                onAvatarChanged = onAvatarChanged,
+            )
+        }
         composable(Routes.SECURITY)     { SecurityScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.MFA)          { MFAScreen(onBack = { navController.popBackStack() }) }
         composable(Routes.DEVICES)      { DevicesScreen(onBack = { navController.popBackStack() }) }
@@ -315,25 +352,46 @@ fun ScaffoldCounterNavGraph(
 
 @Composable
 fun MainScreen(onLogout: () -> Unit = {}) {
+    val context = LocalContext.current
+    val profilePrefs = remember {
+        context.getSharedPreferences(ProfileStore.PREFS, Context.MODE_PRIVATE)
+    }
     val navController = rememberNavController()
     var activeImageUri by remember { mutableStateOf<String?>(null) }
     var activeScanId by remember { mutableStateOf<Int?>(null) }
     var activeResultCount by remember { mutableStateOf<Int?>(null) }
+    var activeProcessingTimeMillis by remember { mutableStateOf<Long?>(null) }
+    var activeDetections by remember { mutableStateOf(emptyList<YoloDetection>()) }
+    var topBarAvatarUri by remember {
+        mutableStateOf(profilePrefs.getString(ProfileStore.KEY_AVATAR_URI, null))
+    }
 
     Scaffold(
-        topBar    = { ScaffoldCounterTopBar() },
+        topBar = {
+            ScaffoldCounterTopBar(
+                onAccountClick = {
+                    navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
+                },
+                avatarUri = topBarAvatarUri,
+            )
+        },
         bottomBar = { ScaffoldCounterBottomNav(navController) },
         containerColor = Background,
     ) { innerPadding ->
         ScaffoldCounterNavGraph(
             navController = navController,
             onLogout      = onLogout,
+            onAvatarChanged = { topBarAvatarUri = it },
             activeImageUri = activeImageUri,
             onActiveImageUriChange = { activeImageUri = it },
             activeScanId = activeScanId,
             onActiveScanIdChange = { activeScanId = it },
             activeResultCount = activeResultCount,
             onActiveResultCountChange = { activeResultCount = it },
+            activeProcessingTimeMillis = activeProcessingTimeMillis,
+            onActiveProcessingTimeMillisChange = { activeProcessingTimeMillis = it },
+            activeDetections = activeDetections,
+            onActiveDetectionsChange = { activeDetections = it },
             modifier      = Modifier.padding(innerPadding),
         )
     }
@@ -347,6 +405,8 @@ fun HomeScreen(
     onActiveImageUriChange: (String) -> Unit,
     onActiveScanIdChange: (Int?) -> Unit,
     onActiveResultCountChange: (Int?) -> Unit,
+    onActiveProcessingTimeMillisChange: (Long?) -> Unit,
+    onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -379,6 +439,8 @@ fun HomeScreen(
                 onActiveScanIdChange(scanId)
                 onActiveImageUriChange(storedUri.toString())
                 onActiveResultCountChange(null)
+                onActiveProcessingTimeMillisChange(null)
+                onActiveDetectionsChange(emptyList())
                 navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
             }
         }
@@ -404,6 +466,8 @@ fun HomeScreen(
                 onActiveScanIdChange(scanId)
                 onActiveImageUriChange(storedUri.toString())
                 onActiveResultCountChange(null)
+                onActiveProcessingTimeMillisChange(null)
+                onActiveDetectionsChange(emptyList())
                 navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
             }
         }
@@ -460,6 +524,29 @@ fun HomeScreen(
 
     // Tapping "Upload Gallery" opens the source picker sheet instead of launching directly
     val onUploadGallery: () -> Unit = { showUploadSheet = true }
+
+    val onScanClick: (ScanRecord) -> Unit = { scan ->
+        when (scan.status) {
+            "Success" -> {
+                val result = ProcessingResultMapper.fromJson(scan.resultJson)
+                onActiveScanIdChange(null)
+                onActiveImageUriChange(scan.imageUri)
+                onActiveResultCountChange(result.totalCount ?: scan.count)
+                onActiveProcessingTimeMillisChange(scan.processingTimeMillis)
+                onActiveDetectionsChange(result.detections)
+                navController.navigate(Routes.RESULT) { launchSingleTop = true }
+            }
+
+            "Pending" -> {
+                onActiveScanIdChange(scan.id)
+                onActiveImageUriChange(scan.imageUri)
+                onActiveResultCountChange(null)
+                onActiveProcessingTimeMillisChange(null)
+                onActiveDetectionsChange(emptyList())
+                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            }
+        }
+    }
 
     // ── Upload source bottom sheet ────────────────────────────────────────────
     if (showUploadSheet) {
@@ -525,13 +612,10 @@ fun HomeScreen(
             item { EmptyScansPlaceholder() }
         } else {
             items(scans) { scan ->
-                RecentScanCard(scan)
+                RecentScanCard(scan, onClick = { onScanClick(scan) })
                 Spacer(Modifier.height(12.dp))
             }
         }
-
-        item { Spacer(Modifier.height(8.dp)) }
-        item { MetadataStrip() }
     }
 }
 
@@ -832,7 +916,7 @@ private fun UploadGalleryCard(modifier: Modifier = Modifier, onClick: () -> Unit
 // ── Recent Scan Card ──────────────────────────────────────────────────────────
 
 @Composable
-private fun RecentScanCard(scan: ScanRecord) {
+private fun RecentScanCard(scan: ScanRecord, onClick: () -> Unit) {
     val isArchived = scan.status == "Archived"
     val isPending  = scan.status == "Pending"
     val isError    = scan.status == "Error"
@@ -843,7 +927,7 @@ private fun RecentScanCard(scan: ScanRecord) {
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceContainerLowest)
             .border(0.5.dp, OutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .clickable {}
+            .clickable(onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -949,41 +1033,6 @@ private fun RecentScanCard(scan: ScanRecord) {
     }
 }
 
-// ── Metadata Strip ────────────────────────────────────────────────────────────
-
-@Composable
-private fun MetadataStrip() {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetadataCard(icon = null,                  glowDot = true,  label = "System Status",    value = "Engine: Neural-Count v2.1 (Active)")
-        MetadataCard(icon = Icons.Filled.Storage,  glowDot = false, label = "Sync Progress",    value = "Local Cache: 12 Scans Pending")
-        MetadataCard(icon = Icons.Filled.Memory,   glowDot = false, label = "Device Efficiency",value = "Neural Processing: Optimized")
-    }
-}
-
-@Composable
-private fun MetadataCard(icon: ImageVector?, glowDot: Boolean, label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(SurfaceContainerLow)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        if (glowDot) {
-            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(PrimaryFixedDim))
-        } else if (icon != null) {
-            Icon(icon, null, tint = Primary, modifier = Modifier.size(22.dp))
-        }
-        Column {
-            Text(label.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariant, letterSpacing = 1.2.sp)
-            Spacer(Modifier.height(2.dp))
-            Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurface)
-        }
-    }
-}
-
 // ─── Placeholder Screens ──────────────────────────────────────────────────────
 
 @Composable
@@ -993,12 +1042,90 @@ fun CurrentScanScreen(
     onActiveScanIdChange: (Int?) -> Unit,
     onActiveImageUriChange: (String) -> Unit,
     onActiveResultCountChange: (Int?) -> Unit,
+    onActiveProcessingTimeMillisChange: (Long?) -> Unit,
+    onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
     val currentActiveScan by vm.currentActiveScan.collectAsState()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val trackedScanId = currentActiveScan?.id ?: activeScanId
+    var showCameraPermissionDialog by remember { mutableStateOf(false) }
+
+    val filesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+            val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+            vm.addScanAndStartProcessing(
+                ScanRecord(
+                    name = "File Import",
+                    datetime = nowFormatted(),
+                    fileType = fileType,
+                    status = "Pending",
+                    imageUri = storedUri.toString(),
+                )
+            ) { scanId ->
+                onActiveScanIdChange(scanId)
+                onActiveImageUriChange(storedUri.toString())
+                onActiveResultCountChange(null)
+                onActiveProcessingTimeMillisChange(null)
+                onActiveDetectionsChange(emptyList())
+                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+            }
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            navController.navigate(Routes.CAMERA) { launchSingleTop = true }
+        } else {
+            showCameraPermissionDialog = true
+        }
+    }
+
+    if (showCameraPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showCameraPermissionDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.CameraAlt,
+                    contentDescription = null,
+                    tint = Primary
+                )
+            },
+            title = { Text("Camera access needed") },
+            text = {
+                Text("S.C.P needs camera access to capture scaffold images for counting.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showCameraPermissionDialog = false }) {
+                    Text("OK", color = Primary)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+        )
+    }
+
+    val onStartScan: () -> Unit = {
+        when {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED -> {
+                navController.navigate(Routes.CAMERA) { launchSingleTop = true }
+            }
+            else -> cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    val onBrowseFiles: () -> Unit = {
+        filesLauncher.launch(
+            arrayOf("image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "image/heic")
+        )
+    }
 
     val trackedScan by produceState<ScanRecord?>(initialValue = null, key1 = trackedScanId) {
         if (trackedScanId == null) {
@@ -1034,8 +1161,11 @@ fun CurrentScanScreen(
             scan.id == activeScanId &&
             scan.status == "Success"
         ) {
+            val successState = processingState as? ProcessingUiState.Success
             onActiveImageUriChange(scan.imageUri)
             onActiveResultCountChange(scan.count)
+            onActiveProcessingTimeMillisChange(successState?.processingTimeMillis)
+            onActiveDetectionsChange(successState?.detections.orEmpty())
             onActiveScanIdChange(null)
             navController.navigate(Routes.RESULT) {
                 popUpTo(Routes.PROCESSING) { inclusive = true }
@@ -1067,7 +1197,10 @@ fun CurrentScanScreen(
             },
         )
     } else {
-        NoScanScreen()
+        NoScanScreen(
+            onStartScan = onStartScan,
+            onBrowseFiles = onBrowseFiles,
+        )
     }
 }
 

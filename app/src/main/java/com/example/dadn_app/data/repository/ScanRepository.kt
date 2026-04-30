@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
 
 class ScanRepository private constructor(
     private val dao: ScanDao,
-    private val processingService: ImageProcessingService = MockImageProcessingService,
+    private val processingService: ImageProcessingService,
 ) {
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pollingMutex = Mutex()
@@ -46,13 +46,29 @@ class ScanRepository private constructor(
         return scanId
     }
 
-    suspend fun completeScan(scanId: Int, count: Int) {
-        dao.updateStatusAndCountById(
+    suspend fun completeScan(
+        scanId: Int,
+        count: Int,
+        processingTimeMillis: Long,
+        detections: List<YoloDetection>,
+        resultJson: String,
+    ) {
+        dao.updateSuccessById(
             scanId = scanId,
             status = "Success",
             count = count,
+            resultJson = resultJson,
+            processingTimeMillis = processingTimeMillis,
         )
-        updateUiState(scanId, ProcessingUiState.Success(count))
+        updateUiState(
+            scanId,
+            ProcessingUiState.Success(
+                count = count,
+                processingTimeMillis = processingTimeMillis,
+                detections = detections,
+                resultJson = resultJson,
+            ),
+        )
         removePollingJob(scanId)
     }
 
@@ -93,7 +109,15 @@ class ScanRepository private constructor(
 
             pollingJobs[scanId] = repositoryScope.launch {
                 val startedAt = System.currentTimeMillis()
-                val job = processingService.startJob(imagePath)
+                val job = try {
+                    processingService.startJob(imagePath)
+                } catch (e: Exception) {
+                    failScan(
+                        scanId = scanId,
+                        message = e.message ?: "Unable to upload image for processing",
+                    )
+                    return@launch
+                }
                 updateUiState(scanId, ProcessingUiState.Processing(elapsedMillis = 0L))
 
                 try {
@@ -117,7 +141,13 @@ class ScanRepository private constructor(
                             break
                         }
 
-                        when (val state = processingService.pollJob(job.jobId)) {
+                        val state = try {
+                            processingService.pollJob(job.jobId)
+                        } catch (e: Exception) {
+                            ProcessingJobState.Error(e.message ?: "Result polling failed")
+                        }
+
+                        when (state) {
                             ProcessingJobState.Processing -> {
                                 updateUiState(
                                     scanId,
@@ -126,7 +156,13 @@ class ScanRepository private constructor(
                             }
 
                             is ProcessingJobState.Success -> {
-                                completeScan(scanId, state.count)
+                                completeScan(
+                                    scanId = scanId,
+                                    count = state.count,
+                                    processingTimeMillis = elapsed,
+                                    detections = state.detections,
+                                    resultJson = state.resultJson,
+                                )
                                 break
                             }
 
@@ -166,6 +202,7 @@ class ScanRepository private constructor(
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: ScanRepository(
                     dao = AppDatabase.getInstance(context).scanDao(),
+                    processingService = RealImageProcessingService(context.applicationContext),
                 ).also { INSTANCE = it }
             }
     }

@@ -98,7 +98,7 @@ fun ProcessingScreen(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = if (isError) "AI-ENGINE:\nKINETIC_SLATE_V4\nERROR STATE" else "AI-ENGINE:\nKINETIC_SLATE_V4",
+                            text = if (isError) "AI-ENGINE:\nYOLOv11\nERROR STATE" else "AI-ENGINE:\nYLOv11",
                             fontSize = 10.sp,
                             color = OnSurfaceVariant,
                             letterSpacing = 0.5.sp,
@@ -106,13 +106,22 @@ fun ProcessingScreen(
                             lineHeight = 14.sp
                         )
                     }
-                    Text(
-                        text = if (isError) "ERR" else processingPercentLabel(uiState),
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (isError) Error else Primary,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    )
+                    if (isError) {
+                        Text(
+                            text = "ERR",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Error,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(30.dp),
+                            color = Primary,
+                            strokeWidth = 3.dp,
+                            trackColor = Primary.copy(alpha = 0.18f),
+                        )
+                    }
                 }
             }
         }
@@ -178,7 +187,7 @@ fun ProcessingScreen(
                 StepCard(
                     state = StepState.Processing,
                     title = "QUANTIFICATION",
-                    description = "Polling mock backend...",
+                    description = "Polling backend...",
                     extraText = processingEtaLabel(uiState)
                 )
 
@@ -192,20 +201,6 @@ fun ProcessingScreen(
         }
 
         Spacer(Modifier.height(40.dp))
-        
-        HorizontalDivider(thickness = 0.5.dp, color = OutlineVariant.copy(alpha = 0.3f))
-        
-        Spacer(Modifier.height(24.dp))
-
-        // Metrics Bottom Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            MetricItem(label = "LATENCY", value = "24ms")
-            MetricItem(label = "PRECISION", value = "99.8%")
-            MetricItem(label = "LOAD", value = "Low")
-        }
     }
 }
 
@@ -249,13 +244,6 @@ private fun ErrorStateCard(
             }
         }
     }
-}
-
-private fun processingPercentLabel(uiState: ProcessingUiState): String {
-    val elapsed = (uiState as? ProcessingUiState.Processing)?.elapsedMillis ?: 0L
-    val maxForUi = 30_000f
-    val percent = ((elapsed / maxForUi) * 100f).toInt().coerceIn(5, 95)
-    return "$percent%"
 }
 
 private fun processingEtaLabel(uiState: ProcessingUiState): String {
@@ -376,26 +364,6 @@ fun StepCard(state: StepState, title: String, description: String, extraText: St
                 }
             }
         }
-    }
-}
-
-@Composable
-fun MetricItem(label: String, value: String) {
-    Column {
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            color = OnSurfaceVariant,
-            letterSpacing = 0.5.sp
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = OnSurface
-        )
     }
 }
 

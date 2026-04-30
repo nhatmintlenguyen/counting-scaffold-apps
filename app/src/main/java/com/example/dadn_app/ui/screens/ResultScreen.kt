@@ -1,11 +1,20 @@
 package com.example.dadn_app.ui.screens
 
+import android.graphics.Paint
+import android.graphics.Rect
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -13,40 +22,52 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.dadn_app.data.repository.YoloDetection
 import com.example.dadn_app.ui.theme.*
-import kotlin.random.Random
+import java.util.Locale
 
 @Composable
 fun ResultScreen(
     imageUri: String? = null,
     scaffoldCount: Int? = null,
+    processingTimeMillis: Long? = null,
+    detections: List<YoloDetection> = emptyList(),
 ) {
-    // TEMP TESTING ONLY:
-    // Replace this random hardcoded scaffold count with the real count returned
-    // by the backend processing API when server-side processing is connected.
-    val resolvedScaffoldCount = scaffoldCount ?: remember { Random.nextInt(12, 46) }
-    // END TEMP TESTING ONLY
+    val resolvedScaffoldCount = scaffoldCount ?: detections.size
+    val averageConfidence = remember(detections) {
+        detections.takeIf { it.isNotEmpty() }
+            ?.map { it.confidence }
+            ?.average()
+            ?.toFloat()
+    }
+    val accuracyLabel = formatAccuracy(averageConfidence)
+    val processingTimeLabel = formatProcessingTime(processingTimeMillis)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Background)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .padding(horizontal = 18.dp, vertical = 24.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(OutlineVariant.copy(alpha = 0.5f)),
-            contentAlignment = Alignment.BottomStart
         ) {
             if (!imageUri.isNullOrBlank()) {
                 AsyncImage(
@@ -58,172 +79,197 @@ fun ResultScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.14f))
+                        .background(Color.Black.copy(alpha = 0.08f))
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.85f))
-                    .padding(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 20.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 12.dp)
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF4CAF50)) // Green success dot
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Analysis Complete",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OnSurface,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "AI-ENGINE:\nKINETIC_SLATE_V4",
-                            fontSize = 10.sp,
-                            color = OnSurfaceVariant,
-                            letterSpacing = 0.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 14.sp
-                        )
-                    }
-                    Text(
-                        text = "100%",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF4CAF50), // Green success text
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Title and Description
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color(0xFFE8F5E9)) // Light green background
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = "PROCESSING COMPLETE",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF2E7D32), // Dark green text
-                letterSpacing = 1.sp,
+            YoloDetectionOverlay(
+                detections = detections,
+                sourceImageSize = YOLO_SOURCE_IMAGE_SIZE,
+                modifier = Modifier.fillMaxSize(),
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(26.dp))
 
-        Text(
-            text = "Count Results",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = OnSurface,
-            letterSpacing = (-1).sp,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ResultMetricCard(
+                icon = Icons.Default.Verified,
+                label = "ACCURACY",
+                value = accuracyLabel,
+                accent = Color(0xFF28C9F5),
+                modifier = Modifier.weight(1f),
+            )
+            ResultMetricCard(
+                icon = Icons.Default.GridView,
+                label = "SCAFFOLDS",
+                value = resolvedScaffoldCount.toString(),
+                accent = Color(0xFF006A78),
+                modifier = Modifier.weight(1f),
+            )
+            ResultMetricCard(
+                icon = Icons.Default.Timer,
+                label = "PROC. TIME",
+                value = processingTimeLabel,
+                accent = Color(0xFFB9C0D0),
+                modifier = Modifier.weight(1f),
+            )
+        }
 
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            text = "Total structural elements identified and verified against safety parameters.",
-            fontSize = 15.sp,
-            color = OnSurfaceVariant,
-            lineHeight = 22.sp,
-        )
-
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            color = Color.White,
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0F2F1))
+            shape = RoundedCornerShape(28.dp),
+            color = Color(0xFFD9E5FF),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Column {
-                    Text(
-                        text = "TOTAL SCAFFOLDS",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF2E7D32),
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = "Detected in current scan",
-                        fontSize = 13.sp,
-                        color = OnSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF006A78),
+                    modifier = Modifier.size(24.dp),
+                )
                 Text(
-                    text = resolvedScaffoldCount.toString(),
-                    fontSize = 42.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFF2E7D32),
-                    lineHeight = 42.sp
+                    text = "RESULTS AUTOMATICALLY ARCHIVED TO PROJECT CLOUD",
+                    color = Color(0xFF006A78),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 18.sp,
                 )
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(120.dp))
+    }
+}
 
-        // Stepper (All Completed)
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            StepCard(
-                state = StepState.Completed,
-                title = "SEGMENTATION",
-                description = "Geometric mesh generation complete",
-                extraText = null
+@Composable
+private fun ResultMetricCard(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .height(112.dp)
+            .border(
+                width = 1.dp,
+                color = OutlineVariant.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(12.dp),
+            ),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(22.dp),
             )
-
-            StepCard(
-                state = StepState.Completed,
-                title = "QUANTIFICATION",
-                description = "Structural nodes identified",
-                extraText = "$resolvedScaffoldCount Found"
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = label,
+                color = OnSurfaceVariant,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
             )
-
-            StepCard(
-                state = StepState.Completed,
-                title = "VALIDATION",
-                description = "Data integrity verified",
-                extraText = "Safe"
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = value,
+                color = OnSurface,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black,
+                lineHeight = 22.sp,
             )
         }
+    }
+}
 
-        Spacer(Modifier.height(40.dp))
-        
-        HorizontalDivider(thickness = 0.5.dp, color = OutlineVariant.copy(alpha = 0.3f))
-        
-        Spacer(Modifier.height(24.dp))
+private const val YOLO_SOURCE_IMAGE_SIZE = 640f
 
-        // Metrics Bottom Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            MetricItem(label = "LATENCY", value = "24ms")
-            MetricItem(label = "PRECISION", value = "99.8%")
-            MetricItem(label = "LOAD", value = "Low")
+private fun formatAccuracy(confidence: Float?): String {
+    if (confidence == null) return "--"
+    return String.format(Locale.US, "%.1f%%", confidence * 100f)
+}
+
+private fun formatProcessingTime(processingTimeMillis: Long?): String {
+    if (processingTimeMillis == null) return "--"
+    return String.format(Locale.US, "%.1fs", processingTimeMillis / 1000f)
+}
+
+@Composable
+private fun YoloDetectionOverlay(
+    detections: List<YoloDetection>,
+    sourceImageSize: Float,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val scale = size.minDimension / sourceImageSize
+        val offsetX = (size.width - sourceImageSize * scale) / 2f
+        val offsetY = (size.height - sourceImageSize * scale) / 2f
+        val strokeWidth = 1.5.dp.toPx()
+        val boxColor = Color(0xFF00E5FF)
+        val labelBgColor = Color(0xE6005A66)
+        val labelTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = 10.sp.toPx()
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val textBounds = Rect()
+
+        detections.forEach { detection ->
+            val left = offsetX + detection.xMin * scale
+            val top = offsetY + detection.yMin * scale
+            val right = offsetX + detection.xMax * scale
+            val bottom = offsetY + detection.yMax * scale
+
+            drawRect(
+                color = boxColor,
+                topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+                style = Stroke(width = strokeWidth),
+            )
+
+            val label = detection.id.toString()
+            labelTextPaint.getTextBounds(label, 0, label.length, textBounds)
+            val labelPaddingX = 4.dp.toPx()
+            val labelPaddingY = 2.dp.toPx()
+            val labelWidth = textBounds.width() + labelPaddingX * 2
+            val labelHeight = textBounds.height() + labelPaddingY * 2
+            val labelLeft = left.coerceIn(0f, size.width - labelWidth)
+            val labelTop = (top - labelHeight).coerceAtLeast(0f)
+
+            drawRoundRect(
+                color = labelBgColor,
+                topLeft = androidx.compose.ui.geometry.Offset(labelLeft, labelTop),
+                size = androidx.compose.ui.geometry.Size(labelWidth, labelHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                label,
+                labelLeft + labelPaddingX,
+                labelTop + labelHeight - labelPaddingY,
+                labelTextPaint,
+            )
         }
     }
 }

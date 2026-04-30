@@ -16,7 +16,8 @@ Built with **Jetpack Compose · Material 3 · MVVM · Room · Retrofit · Encryp
 7. [Local Storage](#local-storage)
 8. [Networking Layer](#networking-layer)
 9. [Setup & Configuration](#setup--configuration)
-10. [Dependency Catalog](#dependency-catalog)
+10. [Rebuild / Reinstall After Code Changes](#rebuild--reinstall-after-code-changes)
+11. [Dependency Catalog](#dependency-catalog)
 
 ---
 
@@ -278,13 +279,75 @@ cd dadn_app
 # Open in Android Studio → Sync Project with Gradle Files → Run
 ```
 
-No additional configuration required. All dependencies are declared in `gradle/libs.versions.toml`.
+The command-line build requires a full JDK, not only a Java runtime:
+```bash
+sudo apt-get install openjdk-21-jdk
+```
+
+All dependencies are declared in `gradle/libs.versions.toml`.
 
 ### 3. Internet permission
 
 Already declared in `AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
+```
+
+---
+
+## Rebuild / Reinstall After Code Changes
+
+Use this when the emulator or device is still running an older APK after the code has changed.
+
+### One-command reinstall
+
+1. Start the emulator or connect a physical Android device with USB debugging enabled.
+2. From the project root, run:
+```bash
+./scripts/reinstall-debug.sh
+```
+
+The script checks for `javac`, finds `adb` from `local.properties`, runs a clean debug install, stops the old app process, and launches the freshly installed app.
+
+### Manual commands
+
+If you prefer to run the steps yourself:
+```bash
+./gradlew clean
+./gradlew installDebug
+```
+
+If `adb` is not on your PATH, use the SDK copy directly:
+```bash
+/home/nhatminh/Android/Sdk/platform-tools/adb devices -l
+./gradlew clean installDebug
+/home/nhatminh/Android/Sdk/platform-tools/adb shell am force-stop com.example.dadn_app
+/home/nhatminh/Android/Sdk/platform-tools/adb shell monkey -p com.example.dadn_app 1
+```
+
+### Android Studio workflow
+
+1. Click **File > Sync Project with Gradle Files**.
+2. Click **Build > Clean Project**.
+3. Click **Build > Rebuild Project**.
+4. Select the emulator/device and click **Run**.
+
+If the app still looks old, uninstall it from the emulator/device and run again:
+```bash
+/home/nhatminh/Android/Sdk/platform-tools/adb uninstall com.example.dadn_app
+./gradlew installDebug
+```
+
+### Common build issue
+
+If Gradle reports that the Java installation does not provide `JAVA_COMPILER`, install a JDK:
+```bash
+sudo apt-get install openjdk-21-jdk
+```
+
+Then confirm `javac` exists:
+```bash
+javac -version
 ```
 
 ---

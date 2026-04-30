@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -39,7 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -52,7 +49,6 @@ import com.example.dadn_app.ui.theme.OnSurfaceVariant
 import com.example.dadn_app.ui.theme.OutlineVariant
 import com.example.dadn_app.ui.theme.Primary
 import com.example.dadn_app.ui.theme.PrimaryFixed
-import com.example.dadn_app.ui.theme.PrimaryFixedDim
 import com.example.dadn_app.ui.theme.SurfaceContainerHigh
 import com.example.dadn_app.ui.theme.SurfaceContainerLow
 import com.example.dadn_app.ui.theme.SurfaceContainerLowest
@@ -150,39 +146,6 @@ fun NoScanScreen(
             }
 
             Spacer(Modifier.height(34.dp))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = SurfaceContainerLowest,
-                border = BorderStroke(1.dp, OutlineVariant.copy(alpha = 0.28f)),
-                shadowElevation = 1.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    StatusInfoRow(
-                        icon = Icons.Default.Verified,
-                        label = "SYSTEM STATUS",
-                        value = "Precision Ready",
-                        accent = Primary,
-                    )
-                    StatusInfoRow(
-                        icon = Icons.Default.Storage,
-                        label = "ACTIVE MODEL",
-                        value = "Scaffold-Net v4.2.1",
-                        accent = PrimaryFixedDim,
-                    )
-                    StatusInfoRow(
-                        icon = Icons.Default.Bolt,
-                        label = "LAST ACTIVITY",
-                        value = "No recent activity",
-                        accent = OutlineVariant,
-                    )
-                }
-            }
-
             Spacer(Modifier.height(120.dp))
         }
     }
@@ -259,49 +222,6 @@ private fun NoScanIllustration() {
                     letterSpacing = 0.8.sp,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun StatusInfoRow(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    accent: Color,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(accent.copy(alpha = 0.12f))
-                .border(0.5.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp))
-        }
-
-        Spacer(Modifier.width(16.dp))
-
-        Column {
-            Text(
-                text = label,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = OnSurfaceVariant,
-                letterSpacing = 0.6.sp,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = value,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = OnSurface,
-            )
         }
     }
 }

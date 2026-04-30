@@ -19,4 +19,6 @@ data class ScanRecord(
     val fileType: String,    // "JPG" | "PNG" | ""
     val status: String,      // "Pending" | "Success" | "Error" | "Archived"
     val imageUri: String,    // content:// or file:// string
+    val resultJson: String? = null,
+    val processingTimeMillis: Long? = null,
 )

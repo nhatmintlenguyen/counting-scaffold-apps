@@ -26,6 +26,24 @@ interface ScanDao {
     @Insert
     suspend fun insert(scan: ScanRecord): Long
 
+    @Query(
+        """
+        UPDATE scans
+        SET status = :status,
+            count = :count,
+            resultJson = :resultJson,
+            processingTimeMillis = :processingTimeMillis
+        WHERE id = :scanId
+        """
+    )
+    suspend fun updateSuccessById(
+        scanId: Int,
+        status: String,
+        count: Int,
+        resultJson: String?,
+        processingTimeMillis: Long?,
+    )
+
     @Query("UPDATE scans SET status = :status, count = :count WHERE id = :scanId")
     suspend fun updateStatusAndCountById(
         scanId: Int,
