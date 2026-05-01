@@ -63,11 +63,12 @@ fun ResultScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.Black)
-                .padding(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(OutlineVariant.copy(alpha = 0.5f)),
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    width = 2.dp,
+                    color = OutlineVariant.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(14.dp),
+                ),
         ) {
             if (!imageUri.isNullOrBlank()) {
                 AsyncImage(
