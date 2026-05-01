@@ -99,7 +99,7 @@ fun ResultScreen(
         ) {
             ResultMetricCard(
                 icon = Icons.Default.Verified,
-                label = "ACCURACY",
+                label = "CONFIDENCE",
                 value = accuracyLabel,
                 accent = Color(0xFF28C9F5),
                 modifier = Modifier.weight(1f),

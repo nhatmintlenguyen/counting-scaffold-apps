@@ -17,6 +17,8 @@ object ProcessingResultMapper {
             ProcessingResultData(
                 totalCount = response.totalCount ?: response.details?.scaffoldsDetected,
                 detections = response.details?.details.orEmpty().toYoloDetections(),
+                countByClass = response.details?.countByClass.orEmpty(),
+                resultImageUrl = response.resultImageUrl,
             )
         } catch (_: Exception) {
             ProcessingResultData()
@@ -29,8 +31,8 @@ object ProcessingResultMapper {
             if (bbox.size < 4) return@mapIndexedNotNull null
 
             YoloDetection(
-                id = index + 1,
-                label = detection.classId?.toString() ?: "",
+                id = detection.id ?: index + 1,
+                label = detection.classId.orEmpty(),
                 confidence = detection.confidence ?: 0f,
                 xMin = bbox[0],
                 yMin = bbox[1],
@@ -43,4 +45,6 @@ object ProcessingResultMapper {
 data class ProcessingResultData(
     val totalCount: Int? = null,
     val detections: List<YoloDetection> = emptyList(),
+    val countByClass: Map<String, Int> = emptyMap(),
+    val resultImageUrl: String? = null,
 )

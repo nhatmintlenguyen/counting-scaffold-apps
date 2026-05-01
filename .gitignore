@@ -38,6 +38,7 @@ keystore.properties
 
 # ─── Mock / design assets (not part of the app) ───────────────────────────────
 **/UI-design/
+/debug/
 
 # ─── OS noise ─────────────────────────────────────────────────────────────────
 .DS_Store
