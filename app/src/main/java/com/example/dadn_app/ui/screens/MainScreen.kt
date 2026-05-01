@@ -422,26 +422,30 @@ fun HomeScreen(
 
     // 1a. System PhotoPicker (Photos app) — no permission needed on API 33+
     val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
-            val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
-            vm.addScanAndStartProcessing(
-                ScanRecord(
-                    name      = "Gallery Import",
-                    datetime  = nowFormatted(),
-                    fileType  = fileType,
-                    status    = "Pending",
-                    imageUri  = storedUri.toString(),
-                )
-            ) { scanId ->
-                onActiveScanIdChange(scanId)
-                onActiveImageUriChange(storedUri.toString())
-                onActiveResultCountChange(null)
-                onActiveProcessingTimeMillisChange(null)
-                onActiveDetectionsChange(emptyList())
-                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEachIndexed { index, uri ->
+                val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+                val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+                vm.addScanAndStartProcessing(
+                    ScanRecord(
+                        name      = "Gallery Import",
+                        datetime  = nowFormatted(),
+                        fileType  = fileType,
+                        status    = "Pending",
+                        imageUri  = storedUri.toString(),
+                    )
+                ) { scanId ->
+                    if (index == 0) {
+                        onActiveScanIdChange(scanId)
+                        onActiveImageUriChange(storedUri.toString())
+                        onActiveResultCountChange(null)
+                        onActiveProcessingTimeMillisChange(null)
+                        onActiveDetectionsChange(emptyList())
+                        navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+                    }
+                }
             }
         }
     }
@@ -449,26 +453,30 @@ fun HomeScreen(
     // 1b. Files browser — OpenDocument filtered to image MIME types only
     //     This covers Downloads, Google Drive, local storage, etc.
     val filesLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
-            val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
-            vm.addScanAndStartProcessing(
-                ScanRecord(
-                    name      = "File Import",
-                    datetime  = nowFormatted(),
-                    fileType  = fileType,
-                    status    = "Pending",
-                    imageUri  = storedUri.toString(),
-                )
-            ) { scanId ->
-                onActiveScanIdChange(scanId)
-                onActiveImageUriChange(storedUri.toString())
-                onActiveResultCountChange(null)
-                onActiveProcessingTimeMillisChange(null)
-                onActiveDetectionsChange(emptyList())
-                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEachIndexed { index, uri ->
+                val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+                val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+                vm.addScanAndStartProcessing(
+                    ScanRecord(
+                        name      = "File Import",
+                        datetime  = nowFormatted(),
+                        fileType  = fileType,
+                        status    = "Pending",
+                        imageUri  = storedUri.toString(),
+                    )
+                ) { scanId ->
+                    if (index == 0) {
+                        onActiveScanIdChange(scanId)
+                        onActiveImageUriChange(storedUri.toString())
+                        onActiveResultCountChange(null)
+                        onActiveProcessingTimeMillisChange(null)
+                        onActiveDetectionsChange(emptyList())
+                        navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+                    }
+                }
             }
         }
     }
