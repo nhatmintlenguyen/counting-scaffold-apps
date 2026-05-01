@@ -422,10 +422,14 @@ fun HomeScreen(
 
     // 1a. System PhotoPicker (Photos app) — no permission needed on API 33+
     val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
     ) { uris ->
-        if (uris.isNotEmpty()) {
-            uris.forEachIndexed { index, uri ->
+        if (uris.size > 10) {
+            android.widget.Toast.makeText(context, "Only the first 10 images will be uploaded", android.widget.Toast.LENGTH_LONG).show()
+        }
+        val limitedUris = uris.take(10)
+        if (limitedUris.isNotEmpty()) {
+            limitedUris.forEachIndexed { index, uri ->
                 val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
                 val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
                 vm.addScanAndStartProcessing(
@@ -455,8 +459,12 @@ fun HomeScreen(
     val filesLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
-        if (uris.isNotEmpty()) {
-            uris.forEachIndexed { index, uri ->
+        if (uris.size > 10) {
+            android.widget.Toast.makeText(context, "Only the first 10 images will be uploaded", android.widget.Toast.LENGTH_LONG).show()
+        }
+        val limitedUris = uris.take(10)
+        if (limitedUris.isNotEmpty()) {
+            limitedUris.forEachIndexed { index, uri ->
                 val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
                 val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
                 vm.addScanAndStartProcessing(
