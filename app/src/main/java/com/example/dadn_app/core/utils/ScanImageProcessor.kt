@@ -11,6 +11,8 @@ import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import android.graphics.ImageDecoder
+import android.os.Build
 
 data class SquareCropSpec(
     val previewWidthPx: Int,
@@ -54,6 +56,56 @@ object ScanImageProcessor {
         orientedBitmap.recycle()
 
         return Uri.fromFile(outputFile)
+    }
+
+    /**
+     * Xử lý ảnh từ Gallery/Files picker:
+     * 1. Decode URI → Bitmap (tự động xử lý EXIF rotation nếu là file)
+     * 2. Center-crop thành hình vuông
+     * 3. Resize về 640×640
+     * 4. Nén JPEG và lưu vào internal storage
+     *
+     * Chỉ gọi hàm này khi user chọn ảnh từ gallery/file picker.
+     * Không dùng cho ảnh chụp từ Camera (đã được xử lý bởi cropToOverlaySquareAndResize).
+     */
+    fun cropGalleryImageToSquare(context: Context, sourceUri: Uri): Uri {
+        val bitmap = decodeUriToBitmap(context, sourceUri)
+            ?: return sourceUri  // fallback: trả về URI gốc nếu không decode được
+
+        val size = min(bitmap.width, bitmap.height)
+        val left = (bitmap.width - size) / 2
+        val top  = (bitmap.height - size) / 2
+
+        val cropped = Bitmap.createBitmap(bitmap, left, top, size, size)
+        val resized  = Bitmap.createScaledBitmap(cropped, YOLO_IMAGE_SIZE, YOLO_IMAGE_SIZE, true)
+        val outputFile = createProcessedScanFile(context)
+
+        FileOutputStream(outputFile).use { out ->
+            resized.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+
+        if (cropped !== bitmap)  cropped.recycle()
+        if (resized !== cropped) resized.recycle()
+        bitmap.recycle()
+
+        return Uri.fromFile(outputFile)
+    }
+
+    /** Decode một content:// hoặc file:// URI thành Bitmap. */
+    private fun decodeUriToBitmap(context: Context, uri: Uri): Bitmap? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val source = ImageDecoder.createSource(context.contentResolver, uri)
+                ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun createProcessedScanFile(context: Context): File {

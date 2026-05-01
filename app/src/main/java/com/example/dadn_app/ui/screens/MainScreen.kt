@@ -48,6 +48,7 @@ import coil.compose.AsyncImage
 import com.example.dadn_app.data.local.ScanRecord
 import com.example.dadn_app.data.repository.ProcessingResultMapper
 import com.example.dadn_app.data.repository.YoloDetection
+import com.example.dadn_app.core.utils.ScanImageProcessor
 import com.example.dadn_app.ui.theme.*
 import com.example.dadn_app.ui.viewmodel.HomeViewModel
 import com.example.dadn_app.ui.viewmodel.ProcessingUiState
@@ -431,7 +432,8 @@ fun HomeScreen(
         if (limitedUris.isNotEmpty()) {
             limitedUris.forEachIndexed { index, uri ->
                 val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
-                val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+                // Crop center-square + resize 640×640 + nén JPEG trước khi upload
+                val storedUri = ScanImageProcessor.cropGalleryImageToSquare(context, uri)
                 vm.addScanAndStartProcessing(
                     ScanRecord(
                         name      = "Gallery Import",
@@ -466,7 +468,8 @@ fun HomeScreen(
         if (limitedUris.isNotEmpty()) {
             limitedUris.forEachIndexed { index, uri ->
                 val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
-                val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
+                // Crop center-square + resize 640×640 + nén JPEG trước khi upload
+                val storedUri = ScanImageProcessor.cropGalleryImageToSquare(context, uri)
                 vm.addScanAndStartProcessing(
                     ScanRecord(
                         name      = "File Import",
