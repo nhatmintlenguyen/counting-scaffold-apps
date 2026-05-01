@@ -3,23 +3,23 @@ package com.example.dadn_app.core.utils
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import android.graphics.ImageDecoder
-import android.os.Build
 
 data class SquareCropSpec(
-    val previewWidthPx: Int,
-    val previewHeightPx: Int,
-    val frameLeftPx: Int,
-    val frameTopPx: Int,
-    val frameSizePx: Int,
+        val previewWidthPx: Int,
+        val previewHeightPx: Int,
+        val frameLeftPx: Int,
+        val frameTopPx: Int,
+        val frameSizePx: Int,
 )
 
 object ScanImageProcessor {
@@ -31,19 +31,20 @@ object ScanImageProcessor {
     }
 
     fun cropToOverlaySquareAndResize(
-        context: Context,
-        originalFile: File,
-        cropSpec: SquareCropSpec,
+            context: Context,
+            originalFile: File,
+            cropSpec: SquareCropSpec,
     ): Uri {
         val orientedBitmap = decodeAndApplyExifRotation(originalFile)
         val cropRect = mapCenteredPreviewFrameToBitmap(orientedBitmap, cropSpec)
-        val cropped = Bitmap.createBitmap(
-            orientedBitmap,
-            cropRect.left,
-            cropRect.top,
-            cropRect.size,
-            cropRect.size,
-        )
+        val cropped =
+                Bitmap.createBitmap(
+                        orientedBitmap,
+                        cropRect.left,
+                        cropRect.top,
+                        cropRect.size,
+                        cropRect.size,
+                )
         val resized = Bitmap.createScaledBitmap(cropped, YOLO_IMAGE_SIZE, YOLO_IMAGE_SIZE, true)
         val outputFile = createProcessedScanFile(context)
 
@@ -58,40 +59,30 @@ object ScanImageProcessor {
         return Uri.fromFile(outputFile)
     }
 
-    /**
-     * Xử lý ảnh từ Gallery/Files picker:
-     * 1. Decode URI → Bitmap (tự động xử lý EXIF rotation nếu là file)
-     * 2. Center-crop thành hình vuông
-     * 3. Resize về 640×640
-     * 4. Nén JPEG và lưu vào internal storage
-     *
-     * Chỉ gọi hàm này khi user chọn ảnh từ gallery/file picker.
-     * Không dùng cho ảnh chụp từ Camera (đã được xử lý bởi cropToOverlaySquareAndResize).
-     */
     fun cropGalleryImageToSquare(context: Context, sourceUri: Uri): Uri {
-        val bitmap = decodeUriToBitmap(context, sourceUri)
-            ?: return sourceUri  // fallback: trả về URI gốc nếu không decode được
+        val bitmap =
+                decodeUriToBitmap(context, sourceUri)
+                        ?: return sourceUri // fallback: trả về URI gốc nếu không decode được
 
         val size = min(bitmap.width, bitmap.height)
         val left = (bitmap.width - size) / 2
-        val top  = (bitmap.height - size) / 2
+        val top = (bitmap.height - size) / 2
 
         val cropped = Bitmap.createBitmap(bitmap, left, top, size, size)
-        val resized  = Bitmap.createScaledBitmap(cropped, YOLO_IMAGE_SIZE, YOLO_IMAGE_SIZE, true)
+        val resized = Bitmap.createScaledBitmap(cropped, YOLO_IMAGE_SIZE, YOLO_IMAGE_SIZE, true)
         val outputFile = createProcessedScanFile(context)
 
         FileOutputStream(outputFile).use { out ->
             resized.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
 
-        if (cropped !== bitmap)  cropped.recycle()
+        if (cropped !== bitmap) cropped.recycle()
         if (resized !== cropped) resized.recycle()
         bitmap.recycle()
 
         return Uri.fromFile(outputFile)
     }
 
-    /** Decode một content:// hoặc file:// URI thành Bitmap. */
     private fun decodeUriToBitmap(context: Context, uri: Uri): Bitmap? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -114,19 +105,23 @@ object ScanImageProcessor {
     }
 
     private fun decodeAndApplyExifRotation(file: File): Bitmap {
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            ?: error("Unable to decode captured image")
+        val bitmap =
+                BitmapFactory.decodeFile(file.absolutePath)
+                        ?: error("Unable to decode captured image")
 
-        val orientation = ExifInterface(file.absolutePath).getAttributeInt(
-            ExifInterface.TAG_ORIENTATION,
-            ExifInterface.ORIENTATION_NORMAL,
-        )
-        val rotation = when (orientation) {
-            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-            else -> 0f
-        }
+        val orientation =
+                ExifInterface(file.absolutePath)
+                        .getAttributeInt(
+                                ExifInterface.TAG_ORIENTATION,
+                                ExifInterface.ORIENTATION_NORMAL,
+                        )
+        val rotation =
+                when (orientation) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                    else -> 0f
+                }
 
         if (rotation == 0f) return bitmap
 
@@ -137,28 +132,28 @@ object ScanImageProcessor {
     }
 
     private fun mapCenteredPreviewFrameToBitmap(
-        bitmap: Bitmap,
-        cropSpec: SquareCropSpec,
+            bitmap: Bitmap,
+            cropSpec: SquareCropSpec,
     ): BitmapSquareRect {
-        if (
-            cropSpec.previewWidthPx <= 0 ||
-            cropSpec.previewHeightPx <= 0 ||
-            cropSpec.frameSizePx <= 0
+        if (cropSpec.previewWidthPx <= 0 ||
+                        cropSpec.previewHeightPx <= 0 ||
+                        cropSpec.frameSizePx <= 0
         ) {
             val fallbackSize = min(bitmap.width, bitmap.height)
             return BitmapSquareRect(
-                left = (bitmap.width - fallbackSize) / 2,
-                top = (bitmap.height - fallbackSize) / 2,
-                size = fallbackSize,
+                    left = (bitmap.width - fallbackSize) / 2,
+                    top = (bitmap.height - fallbackSize) / 2,
+                    size = fallbackSize,
             )
         }
 
         // PreviewView uses a center-fill style preview. This reverses that transform:
         // bitmap -> scaled preview -> centered square frame -> bitmap crop.
-        val scale = max(
-            cropSpec.previewWidthPx.toFloat() / bitmap.width.toFloat(),
-            cropSpec.previewHeightPx.toFloat() / bitmap.height.toFloat(),
-        )
+        val scale =
+                max(
+                        cropSpec.previewWidthPx.toFloat() / bitmap.width.toFloat(),
+                        cropSpec.previewHeightPx.toFloat() / bitmap.height.toFloat(),
+                )
         val displayedWidth = bitmap.width * scale
         val displayedHeight = bitmap.height * scale
         val displayedLeft = (cropSpec.previewWidthPx - displayedWidth) / 2f
@@ -177,7 +172,7 @@ object ScanImageProcessor {
 }
 
 private data class BitmapSquareRect(
-    val left: Int,
-    val top: Int,
-    val size: Int,
+        val left: Int,
+        val top: Int,
+        val size: Int,
 )
