@@ -1149,25 +1149,38 @@ fun CurrentScanScreen(
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
 
     val filesLauncher =
-            rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                if (uri != null) {
-                    val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
-                    val storedUri = copyScanImageToInternalStorage(context, uri, fileType)
-                    vm.addScanAndStartProcessing(
-                            ScanRecord(
-                                    name = "File Import",
-                                    datetime = nowFormatted(),
-                                    fileType = fileType,
-                                    status = "Pending",
-                                    imageUri = storedUri.toString(),
+            rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+                if (uris.size > 10) {
+                    android.widget.Toast.makeText(
+                                    context,
+                                    "Only the first 10 images will be uploaded",
+                                    android.widget.Toast.LENGTH_LONG
                             )
-                    ) { scanId ->
-                        onActiveScanIdChange(scanId)
-                        onActiveImageUriChange(storedUri.toString())
-                        onActiveResultCountChange(null)
-                        onActiveProcessingTimeMillisChange(null)
-                        onActiveDetectionsChange(emptyList())
-                        navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+                            .show()
+                }
+                val limitedUris = uris.take(10)
+                if (limitedUris.isNotEmpty()) {
+                    limitedUris.forEachIndexed { index, uri ->
+                        val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
+                        val storedUri = ScanImageProcessor.cropGalleryImageToSquare(context, uri)
+                        vm.addScanAndStartProcessing(
+                                ScanRecord(
+                                        name = "File Import",
+                                        datetime = nowFormatted(),
+                                        fileType = fileType,
+                                        status = "Pending",
+                                        imageUri = storedUri.toString(),
+                                )
+                        ) { scanId ->
+                            if (index == 0) {
+                                onActiveScanIdChange(scanId)
+                                onActiveImageUriChange(storedUri.toString())
+                                onActiveResultCountChange(null)
+                                onActiveProcessingTimeMillisChange(null)
+                                onActiveDetectionsChange(emptyList())
+                                navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
+                            }
+                        }
                     }
                 }
             }
