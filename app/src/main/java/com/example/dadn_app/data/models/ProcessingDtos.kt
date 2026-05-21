@@ -28,8 +28,9 @@ data class ProcessingDetailsDto(
 )
 
 data class DetectionDto(
+    val id: Int? = null,
     @SerializedName("class")
-    val classId: Int? = null,
+    val classLabel: String? = null,
     val confidence: Float? = null,
     val bbox: List<Float> = emptyList(),
 )

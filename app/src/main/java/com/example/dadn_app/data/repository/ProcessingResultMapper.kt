@@ -29,8 +29,8 @@ object ProcessingResultMapper {
             if (bbox.size < 4) return@mapIndexedNotNull null
 
             YoloDetection(
-                id = index + 1,
-                label = detection.classId?.toString() ?: "",
+                id = detection.id ?: index + 1,
+                label = detection.classLabel.orEmpty(),
                 confidence = detection.confidence ?: 0f,
                 xMin = bbox[0],
                 yMin = bbox[1],
