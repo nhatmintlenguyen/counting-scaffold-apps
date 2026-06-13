@@ -862,7 +862,7 @@ private fun CreateProjectDialog(
 
 private fun shareReport(context: Context, reportUri: Uri) {
     val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/vnd.ms-excel"
+        type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         putExtra(Intent.EXTRA_STREAM, reportUri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
