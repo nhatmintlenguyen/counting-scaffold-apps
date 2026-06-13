@@ -2,7 +2,9 @@ package com.example.dadn_app.data.repository
 
 import android.content.Context
 import com.example.dadn_app.data.local.AppDatabase
+import com.example.dadn_app.data.local.ProjectDao
 import com.example.dadn_app.data.local.ScanDao
+import com.example.dadn_app.data.local.ScanProject
 import com.example.dadn_app.data.local.ScanRecord
 import com.example.dadn_app.ui.viewmodel.ProcessingUiState
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
 
 class ScanRepository private constructor(
     private val dao: ScanDao,
+    private val projectDao: ProjectDao,
     private val processingService: ImageProcessingService,
 ) {
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -28,6 +31,8 @@ class ScanRepository private constructor(
     private val processingStates = MutableStateFlow<Map<Int, ProcessingUiState>>(emptyMap())
 
     fun observeRecentScans(): Flow<List<ScanRecord>> = dao.getAll()
+
+    fun observeProjects(): Flow<List<ScanProject>> = projectDao.getAll()
 
     fun observeScan(scanId: Int): Flow<ScanRecord?> = dao.observeById(scanId)
 
@@ -39,6 +44,12 @@ class ScanRepository private constructor(
             .distinctUntilChanged()
 
     suspend fun insert(scan: ScanRecord): Int = dao.insert(scan).toInt()
+
+    suspend fun createProject(name: String): Int =
+        projectDao.insert(ScanProject(name = name.trim().ifBlank { "Untitled Project" })).toInt()
+
+    suspend fun getCompletedScansForProject(projectId: Int): List<ScanRecord> =
+        dao.getByProject(projectId).filter { it.status == "Success" }
 
     suspend fun insertAndStartProcessing(scan: ScanRecord): Int {
         val scanId = insert(scan)
@@ -200,8 +211,10 @@ class ScanRepository private constructor(
 
         fun getInstance(context: Context): ScanRepository =
             INSTANCE ?: synchronized(this) {
+                val database = AppDatabase.getInstance(context)
                 INSTANCE ?: ScanRepository(
-                    dao = AppDatabase.getInstance(context).scanDao(),
+                    dao = database.scanDao(),
+                    projectDao = database.projectDao(),
                     processingService = RealImageProcessingService(context.applicationContext),
                 ).also { INSTANCE = it }
             }

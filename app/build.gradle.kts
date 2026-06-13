@@ -85,6 +85,9 @@ dependencies {
     // Security (EncryptedSharedPreferences)
     implementation(libs.security.crypto)
 
+    // Google Sign-In
+    implementation(libs.play.services.auth)
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

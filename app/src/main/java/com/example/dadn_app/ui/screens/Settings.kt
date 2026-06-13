@@ -73,9 +73,9 @@ import com.example.dadn_app.ui.theme.SurfaceContainerLowest
 
 private fun defaultProfileEmail(): String {
     return try {
-        if (TokenManager.isLoggedIn) "user@example.com" else "user@example.com"
+        TokenManager.userEmail ?: ""
     } catch (_: UninitializedPropertyAccessException) {
-        "user@example.com"
+        ""
     }
 }
 

@@ -15,8 +15,8 @@ import retrofit2.converter.gson.GsonConverterFactory
  */
 object RetrofitClient {
 
-    // ← Change this to your server address
-    private const val BASE_URL = "http://10.0.2.2:8000/"
+    // Deployed backend server.
+    private const val BASE_URL = "http://34.45.211.176/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY   // logs full request + response in Logcat

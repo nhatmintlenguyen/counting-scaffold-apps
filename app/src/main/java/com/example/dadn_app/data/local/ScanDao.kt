@@ -17,6 +17,9 @@ interface ScanDao {
     @Query("SELECT * FROM scans WHERE id = :scanId LIMIT 1")
     suspend fun getById(scanId: Int): ScanRecord?
 
+    @Query("SELECT * FROM scans WHERE projectId = :projectId ORDER BY id ASC")
+    suspend fun getByProject(projectId: Int): List<ScanRecord>
+
     @Query("SELECT * FROM scans WHERE status = 'Pending' ORDER BY id DESC LIMIT 1")
     fun observeCurrentActiveScan(): Flow<ScanRecord?>
 

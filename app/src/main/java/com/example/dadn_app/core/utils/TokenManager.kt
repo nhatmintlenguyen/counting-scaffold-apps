@@ -23,6 +23,7 @@ object TokenManager {
     private const val PREFS_FILE  = "scp_secure_prefs"
     private const val KEY_ACCESS  = "access_token"
     private const val KEY_REFRESH = "refresh_token"
+    private const val KEY_USER_EMAIL = "user_email"
 
     private lateinit var prefs: SharedPreferences
 
@@ -40,11 +41,25 @@ object TokenManager {
         )
     }
 
-    /** Save both tokens after a successful login or register. */
-    fun saveTokens(accessToken: String, refreshToken: String) {
+    /** Save the access token after a successful login. */
+    fun saveAccessToken(accessToken: String, email: String? = null) {
         prefs.edit()
-            .putString(KEY_ACCESS,  accessToken)
-            .putString(KEY_REFRESH, refreshToken)
+            .putString(KEY_ACCESS, accessToken)
+            .remove(KEY_REFRESH)
+            .apply {
+                if (email == null) remove(KEY_USER_EMAIL) else putString(KEY_USER_EMAIL, email)
+            }
+            .apply()
+    }
+
+    /** Kept for compatibility if a future backend adds refresh tokens again. */
+    fun saveTokens(accessToken: String, refreshToken: String? = null, email: String? = null) {
+        prefs.edit()
+            .putString(KEY_ACCESS, accessToken)
+            .apply {
+                if (refreshToken == null) remove(KEY_REFRESH) else putString(KEY_REFRESH, refreshToken)
+                if (email == null) remove(KEY_USER_EMAIL) else putString(KEY_USER_EMAIL, email)
+            }
             .apply()
     }
 
@@ -54,6 +69,9 @@ object TokenManager {
 
     val refreshToken: String?
         get() = prefs.getString(KEY_REFRESH, null)
+
+    val userEmail: String?
+        get() = prefs.getString(KEY_USER_EMAIL, null)
 
     /** True when a user is currently logged in. */
     val isLoggedIn: Boolean

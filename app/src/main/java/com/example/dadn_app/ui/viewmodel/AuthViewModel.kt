@@ -17,8 +17,9 @@ import kotlinx.coroutines.launch
  */
 data class AuthUiState(
     val isLoading: Boolean = false,
-    val errorMessage: String? = null,   // non-null triggers an error snackbar
-    val isSuccess: Boolean = false,     // true = navigate to MainScreen
+    val errorMessage: String? = null,       // non-null triggers an error snackbar
+    val isSuccess: Boolean = false,         // true = navigate to MainScreen after login
+    val isRegisterSuccess: Boolean = false, // true = return to login after register
 )
 
 // ─── ViewModel ────────────────────────────────────────────────────────────────
@@ -29,6 +30,22 @@ class AuthViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
+
+    // ── Google Sign-In / Sign-Up ─────────────────────────────────────────────
+
+    fun signInWithGoogle(googleToken: String, email: String?) {
+        viewModelScope.launch {
+            _uiState.value = AuthUiState(isLoading = true)
+            when (val result = repo.signInWithGoogle(googleToken, email?.trim())) {
+                is AuthResult.Success -> _uiState.value = AuthUiState(isSuccess = true)
+                is AuthResult.Error   -> _uiState.value = AuthUiState(errorMessage = result.message)
+            }
+        }
+    }
+
+    fun googleSignInFailed(message: String) {
+        _uiState.value = AuthUiState(errorMessage = message)
+    }
 
     // ── Login ─────────────────────────────────────────────────────────────────
 
@@ -48,7 +65,7 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = AuthUiState(isLoading = true)
             when (val result = repo.register(fullName.trim(), email.trim(), password)) {
-                is AuthResult.Success -> _uiState.value = AuthUiState(isSuccess = true)
+                is AuthResult.Success -> _uiState.value = AuthUiState(isRegisterSuccess = true)
                 is AuthResult.Error   -> _uiState.value = AuthUiState(errorMessage = result.message)
             }
         }
@@ -57,5 +74,9 @@ class AuthViewModel : ViewModel() {
     /** Call after an error has been shown to reset the state. */
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun clearSuccess() {
+        _uiState.value = _uiState.value.copy(isSuccess = false, isRegisterSuccess = false)
     }
 }

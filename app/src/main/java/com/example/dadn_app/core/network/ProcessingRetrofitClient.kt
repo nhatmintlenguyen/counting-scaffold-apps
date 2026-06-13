@@ -6,13 +6,14 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object ProcessingRetrofitClient {
-    private const val BASE_URL = "http://35.232.204.176/"
+    private const val BASE_URL = "http://34.45.211.176/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
     private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor(AuthInterceptor())
         .addInterceptor(loggingInterceptor)
         .build()
 

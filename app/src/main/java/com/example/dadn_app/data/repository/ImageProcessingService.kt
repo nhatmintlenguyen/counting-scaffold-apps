@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import com.example.dadn_app.core.network.ProcessingRetrofitClient
+import com.example.dadn_app.core.utils.TokenManager
 import com.example.dadn_app.data.repository.ProcessingResultMapper.toYoloDetections
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -38,6 +39,8 @@ class RealImageProcessingService(
     private val api = ProcessingRetrofitClient.processingApi
 
     override suspend fun startJob(imageUri: String): ProcessingJob {
+        requireLoggedIn()
+
         val uploadFile = imageUriToUploadFile(imageUri)
         val requestBody = uploadFile.file.asRequestBody(uploadFile.mimeType.toMediaTypeOrNull())
 
@@ -55,7 +58,12 @@ class RealImageProcessingService(
 
         val response = api.uploadImage(imagePart)
         if (!response.isSuccessful) {
-            throw IllegalStateException("Upload failed: HTTP ${response.code()}")
+            val message = if (response.code() == 401 || response.code() == 403) {
+                "Upload rejected. Please log in again."
+            } else {
+                "Upload failed: HTTP ${response.code()}"
+            }
+            throw IllegalStateException(message)
         }
 
         val body = response.body() ?: throw IllegalStateException("Upload failed: empty response")
@@ -69,6 +77,10 @@ class RealImageProcessingService(
     }
 
     override suspend fun pollJob(jobId: String): ProcessingJobState {
+        if (!TokenManager.isLoggedIn) {
+            return ProcessingJobState.Error("Please log in before checking processing results.")
+        }
+
         val response = api.getResult(jobId)
         if (!response.isSuccessful) {
             return ProcessingJobState.Error("Result polling failed: HTTP ${response.code()}")
@@ -104,6 +116,13 @@ class RealImageProcessingService(
                 // Unknown backend statuses stay in processing until the app timeout policy resolves them.
                 ProcessingJobState.Processing
             }
+        }
+    }
+
+
+    private fun requireLoggedIn() {
+        if (!TokenManager.isLoggedIn) {
+            throw IllegalStateException("Please log in before uploading an image.")
         }
     }
 

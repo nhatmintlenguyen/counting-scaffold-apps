@@ -12,7 +12,6 @@ import com.example.dadn_app.ui.viewmodel.AuthViewModel
 
 object AppRoutes {
     const val LOGIN    = "login"
-    const val REGISTER = "register"
     const val MAIN     = "main"
 }
 
@@ -23,8 +22,7 @@ object AppRoutes {
  *   - "main"  → user is already logged in (token exists)
  *   - "login" → fresh install or after logout
  *
- * A single [AuthViewModel] instance is shared between LoginScreen and
- * RegisterScreen so they don't reset state when navigating between them.
+ * A single [AuthViewModel] instance is scoped to the auth flow.
  */
 @Composable
 fun AppNavGraph(startDestination: String) {
@@ -39,26 +37,10 @@ fun AppNavGraph(startDestination: String) {
     ) {
         composable(AppRoutes.LOGIN) {
             LoginScreen(
-                vm                   = authVm,
-                onNavigateToRegister = {
-                    navController.navigate(AppRoutes.REGISTER)
-                },
+                vm = authVm,
                 onLoginSuccess = {
                     navController.navigate(AppRoutes.MAIN) {
-                        // Remove all auth screens from the back stack —
-                        // pressing Back from MainScreen exits the app
-                        popUpTo(AppRoutes.LOGIN) { inclusive = true }
-                    }
-                },
-            )
-        }
-
-        composable(AppRoutes.REGISTER) {
-            RegisterScreen(
-                vm                = authVm,
-                onNavigateToLogin = { navController.popBackStack() },
-                onRegisterSuccess = {
-                    navController.navigate(AppRoutes.MAIN) {
+                        // Remove auth from the back stack so Back exits from Main.
                         popUpTo(AppRoutes.LOGIN) { inclusive = true }
                     }
                 },

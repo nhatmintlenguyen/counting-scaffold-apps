@@ -2,4 +2,5 @@
 <paths>
     <!-- Used by FileProvider to share camera capture URIs with the camera app -->
     <cache-path name="camera_images" path="camera/" />
+    <cache-path name="reports" path="reports/" />
 </paths>

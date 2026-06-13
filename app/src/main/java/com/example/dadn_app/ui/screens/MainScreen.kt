@@ -2,6 +2,7 @@ package com.example.dadn_app.ui.screens
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.webkit.MimeTypeMap
@@ -46,6 +47,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.example.dadn_app.core.utils.ScanImageProcessor
+import com.example.dadn_app.data.local.ScanProject
 import com.example.dadn_app.data.local.ScanRecord
 import com.example.dadn_app.data.repository.ProcessingResultMapper
 import com.example.dadn_app.data.repository.YoloDetection
@@ -278,6 +280,8 @@ fun ScaffoldCounterNavGraph(
         onActiveProcessingTimeMillisChange: (Long?) -> Unit,
         activeDetections: List<YoloDetection>,
         onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
+        activeProjectId: Int?,
+        onActiveProjectIdChange: (Int?) -> Unit,
         modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -293,6 +297,8 @@ fun ScaffoldCounterNavGraph(
                     onActiveResultCountChange = onActiveResultCountChange,
                     onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
                     onActiveDetectionsChange = onActiveDetectionsChange,
+                    activeProjectId = activeProjectId,
+                    onActiveProjectIdChange = onActiveProjectIdChange,
             )
         }
         composable(Routes.CURRENT_SCAN) {
@@ -304,6 +310,7 @@ fun ScaffoldCounterNavGraph(
                     onActiveResultCountChange = onActiveResultCountChange,
                     onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
                     onActiveDetectionsChange = onActiveDetectionsChange,
+                    activeProjectId = activeProjectId,
             )
         }
         composable(Routes.CAMERA) {
@@ -317,6 +324,7 @@ fun ScaffoldCounterNavGraph(
                                         fileType = "JPG",
                                         status = "Pending",
                                         imageUri = processedSquareUri.toString(),
+                                        projectId = activeProjectId,
                                 )
                         ) { scanId ->
                             onActiveScanIdChange(scanId)
@@ -342,6 +350,7 @@ fun ScaffoldCounterNavGraph(
                     onActiveResultCountChange = onActiveResultCountChange,
                     onActiveProcessingTimeMillisChange = onActiveProcessingTimeMillisChange,
                     onActiveDetectionsChange = onActiveDetectionsChange,
+                    activeProjectId = activeProjectId,
             )
         }
         composable(Routes.RESULT) {
@@ -379,6 +388,7 @@ fun MainScreen(onLogout: () -> Unit = {}) {
     var activeResultCount by remember { mutableStateOf<Int?>(null) }
     var activeProcessingTimeMillis by remember { mutableStateOf<Long?>(null) }
     var activeDetections by remember { mutableStateOf(emptyList<YoloDetection>()) }
+    var activeProjectId by remember { mutableStateOf<Int?>(null) }
     var topBarAvatarUri by remember {
         mutableStateOf(profilePrefs.getString(ProfileStore.KEY_AVATAR_URI, null))
     }
@@ -409,6 +419,8 @@ fun MainScreen(onLogout: () -> Unit = {}) {
                 onActiveProcessingTimeMillisChange = { activeProcessingTimeMillis = it },
                 activeDetections = activeDetections,
                 onActiveDetectionsChange = { activeDetections = it },
+                activeProjectId = activeProjectId,
+                onActiveProjectIdChange = { activeProjectId = it },
                 modifier = Modifier.padding(innerPadding),
         )
     }
@@ -424,16 +436,29 @@ fun HomeScreen(
         onActiveResultCountChange: (Int?) -> Unit,
         onActiveProcessingTimeMillisChange: (Long?) -> Unit,
         onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
+        activeProjectId: Int?,
+        onActiveProjectIdChange: (Int?) -> Unit,
         vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val scans by vm.scans.collectAsState()
+    val projects by vm.projects.collectAsState()
+    val activeProject = projects.firstOrNull { it.id == activeProjectId }
+    val visibleScans = activeProjectId?.let { projectId -> scans.filter { it.projectId == projectId } } ?: scans
 
     // ── State ────────────────────────────────────────────────────────────────
     // Controls the rationale/denied dialog
     var showCameraPermissionDialog by remember { mutableStateOf(false) }
     // Controls the upload-source bottom sheet
     var showUploadSheet by remember { mutableStateOf(false) }
+    var showCreateProjectDialog by remember { mutableStateOf(false) }
+    var newProjectName by remember { mutableStateOf("") }
+
+    LaunchedEffect(projects, activeProjectId) {
+        if (activeProjectId == null && projects.isNotEmpty()) {
+            onActiveProjectIdChange(projects.first().id)
+        }
+    }
 
     // ── Activity result launchers ─────────────────────────────────────────────
 
@@ -451,6 +476,11 @@ fun HomeScreen(
                             .show()
                 }
                 val limitedUris = uris.take(10)
+                val projectId = activeProjectId
+                if (projectId == null) {
+                    android.widget.Toast.makeText(context, "Create a project before uploading images", android.widget.Toast.LENGTH_SHORT).show()
+                    return@rememberLauncherForActivityResult
+                }
                 if (limitedUris.isNotEmpty()) {
                     limitedUris.forEachIndexed { index, uri ->
                         val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
@@ -462,6 +492,7 @@ fun HomeScreen(
                                         fileType = fileType,
                                         status = "Pending",
                                         imageUri = storedUri.toString(),
+                                        projectId = projectId,
                                 )
                         ) { scanId ->
                             if (index == 0) {
@@ -491,6 +522,11 @@ fun HomeScreen(
                             .show()
                 }
                 val limitedUris = uris.take(10)
+                val projectId = activeProjectId
+                if (projectId == null) {
+                    android.widget.Toast.makeText(context, "Create a project before uploading images", android.widget.Toast.LENGTH_SHORT).show()
+                    return@rememberLauncherForActivityResult
+                }
                 if (limitedUris.isNotEmpty()) {
                     limitedUris.forEachIndexed { index, uri ->
                         val fileType = uriToFileType(context, uri).ifBlank { "JPG" }
@@ -502,6 +538,7 @@ fun HomeScreen(
                                         fileType = fileType,
                                         status = "Pending",
                                         imageUri = storedUri.toString(),
+                                        projectId = projectId,
                                 )
                         ) { scanId ->
                             if (index == 0) {
@@ -556,7 +593,12 @@ fun HomeScreen(
     }
 
     // ── Actions ──────────────────────────────────────────────────────────────
-    val onTakePhoto: () -> Unit = {
+    val onTakePhoto: () -> Unit = onTakePhoto@{
+        if (activeProjectId == null) {
+            android.widget.Toast.makeText(context, "Create a project before taking photos", android.widget.Toast.LENGTH_SHORT).show()
+            showCreateProjectDialog = true
+            return@onTakePhoto
+        }
         when {
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                     PackageManager.PERMISSION_GRANTED -> {
@@ -589,6 +631,23 @@ fun HomeScreen(
                 navController.navigate(Routes.PROCESSING) { launchSingleTop = true }
             }
         }
+    }
+
+    if (showCreateProjectDialog) {
+        CreateProjectDialog(
+                projectName = newProjectName,
+                onProjectNameChange = { newProjectName = it },
+                onDismiss = {
+                    showCreateProjectDialog = false
+                    newProjectName = ""
+                },
+                onCreate = {
+                    val name = newProjectName.trim().ifBlank { "Project ${projects.size + 1}" }
+                    vm.createProject(name) { projectId -> onActiveProjectIdChange(projectId) }
+                    showCreateProjectDialog = false
+                    newProjectName = ""
+                },
+        )
     }
 
     // ── Upload source bottom sheet ────────────────────────────────────────────
@@ -626,7 +685,34 @@ fun HomeScreen(
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
     ) {
         item { HeroSection() }
-        item { Spacer(Modifier.height(28.dp)) }
+        item { Spacer(Modifier.height(24.dp)) }
+        item {
+            ProjectSessionPanel(
+                    projects = projects,
+                    activeProject = activeProject,
+                    successfulScanCount = visibleScans.count { it.status == "Success" },
+                    onCreateProject = { showCreateProjectDialog = true },
+                    onSelectProject = onActiveProjectIdChange,
+                    onExportReport = {
+                        val project = activeProject
+                        if (project == null) {
+                            android.widget.Toast.makeText(context, "Create a project before exporting", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            vm.exportProjectReport(project) { result ->
+                                result.onSuccess { uri -> shareReport(context, uri) }
+                                      .onFailure { error ->
+                                          android.widget.Toast.makeText(
+                                                  context,
+                                                  error.message ?: "Unable to export report",
+                                                  android.widget.Toast.LENGTH_LONG,
+                                          ).show()
+                                      }
+                            }
+                        }
+                    },
+            )
+        }
+        item { Spacer(Modifier.height(20.dp)) }
         item { ActionGrid(onTakePhoto = onTakePhoto, onUploadGallery = onUploadGallery) }
         item { Spacer(Modifier.height(28.dp)) }
 
@@ -637,13 +723,13 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                        text = "Recent Scans",
+                        text = if (activeProject == null) "Recent Scans" else "Project Scans",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = OnSurface,
                         letterSpacing = (-0.3).sp,
                 )
-                if (scans.isNotEmpty()) {
+                if (visibleScans.isNotEmpty()) {
                     Text(
                             text = "View All",
                             fontSize = 12.sp,
@@ -658,15 +744,129 @@ fun HomeScreen(
 
         item { Spacer(Modifier.height(16.dp)) }
 
-        if (scans.isEmpty()) {
+        if (visibleScans.isEmpty()) {
             item { EmptyScansPlaceholder() }
         } else {
-            items(scans) { scan ->
+            items(visibleScans) { scan ->
                 RecentScanCard(scan, onClick = { onScanClick(scan) })
                 Spacer(Modifier.height(12.dp))
             }
         }
     }
+}
+
+
+@Composable
+private fun ProjectSessionPanel(
+        projects: List<ScanProject>,
+        activeProject: ScanProject?,
+        successfulScanCount: Int,
+        onCreateProject: () -> Unit,
+        onSelectProject: (Int?) -> Unit,
+        onExportReport: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = SurfaceContainerLowest,
+            tonalElevation = 0.dp,
+            shadowElevation = 1.dp,
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.FolderSpecial, contentDescription = null, tint = Primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Project session", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = OnSurface)
+                    Text(
+                            activeProject?.name ?: "No active project",
+                            fontSize = 12.sp,
+                            color = OnSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TextButton(onClick = onCreateProject) { Text("New") }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                            onClick = { expanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = projects.isNotEmpty(),
+                    ) {
+                        Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Select", maxLines = 1)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        projects.forEach { project ->
+                            DropdownMenuItem(
+                                    text = { Text(project.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = {
+                                        expanded = false
+                                        onSelectProject(project.id)
+                                    },
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                        onClick = onExportReport,
+                        modifier = Modifier.weight(1f),
+                        enabled = activeProject != null && successfulScanCount > 0,
+                ) {
+                    Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Export")
+                }
+            }
+
+            Text(
+                    text = "$successfulScanCount completed scan(s) ready for report",
+                    fontSize = 11.sp,
+                    color = OnSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateProjectDialog(
+        projectName: String,
+        onProjectNameChange: (String) -> Unit,
+        onDismiss: () -> Unit,
+        onCreate: () -> Unit,
+) {
+    AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null, tint = Primary) },
+            title = { Text("Create project") },
+            text = {
+                OutlinedTextField(
+                        value = projectName,
+                        onValueChange = onProjectNameChange,
+                        singleLine = true,
+                        label = { Text("Project name") },
+                        modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = { TextButton(onClick = onCreate) { Text("Create") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+            containerColor = SurfaceContainerLowest,
+    )
+}
+
+private fun shareReport(context: Context, reportUri: Uri) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/vnd.ms-excel"
+        putExtra(Intent.EXTRA_STREAM, reportUri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Export report"))
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────
@@ -1139,6 +1339,7 @@ fun CurrentScanScreen(
         onActiveResultCountChange: (Int?) -> Unit,
         onActiveProcessingTimeMillisChange: (Long?) -> Unit,
         onActiveDetectionsChange: (List<YoloDetection>) -> Unit,
+        activeProjectId: Int?,
         vm: HomeViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -1170,6 +1371,7 @@ fun CurrentScanScreen(
                                         fileType = fileType,
                                         status = "Pending",
                                         imageUri = storedUri.toString(),
+                                        projectId = activeProjectId,
                                 )
                         ) { scanId ->
                             if (index == 0) {

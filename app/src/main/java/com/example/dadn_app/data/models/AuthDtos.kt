@@ -10,28 +10,31 @@ data class LoginRequest(
 )
 
 data class RegisterRequest(
-    @SerializedName("full_name") val fullName: String,
-    @SerializedName("email")     val email: String,
-    @SerializedName("password")  val password: String,
+    @SerializedName("email")    val email: String,
+    @SerializedName("password") val password: String,
+)
+
+data class GoogleLoginRequest(
+    @SerializedName("google_token") val googleToken: String,
 )
 
 // ─── Response bodies ──────────────────────────────────────────────────────────
 
 /**
- * Returned by both /api/login and /api/register on success.
- * The backend issues two JWT tokens:
- *   - accessToken  : short-lived, sent in every API request header
- *   - refreshToken : long-lived, used only to obtain a new accessToken
+ * Returned by /login on success.
+ * The backend issues a JWT access token that must be sent in protected requests.
  */
 data class AuthResponse(
-    @SerializedName("access_token")  val accessToken: String,
-    @SerializedName("refresh_token") val refreshToken: String,
-    @SerializedName("user")          val user: UserDto,
+    @SerializedName("access_token") val accessToken: String,
+    @SerializedName("token_type")   val tokenType: String = "bearer",
+)
+
+data class RegisterResponse(
+    @SerializedName("message") val message: String,
 )
 
 data class UserDto(
     @SerializedName("id")        val id: Int,
-    @SerializedName("full_name") val fullName: String,
     @SerializedName("email")     val email: String,
 )
 
@@ -40,5 +43,6 @@ data class UserDto(
  * e.g. { "message": "Invalid credentials" }
  */
 data class ApiError(
-    @SerializedName("message") val message: String,
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("detail")  val detail: String? = null,
 )
